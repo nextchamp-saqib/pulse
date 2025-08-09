@@ -2,11 +2,7 @@ import frappe
 from frappe.rate_limiter import rate_limit
 
 from .constants import API_RATE_LIMIT, API_RATE_LIMIT_SECONDS
-from .logger import get_logger
-from .processor import EventProcessor
 from .stream import RedisStream
-
-logger = get_logger()
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -31,10 +27,3 @@ def track_event(site_name, event, app_name, app_version, timestamp, **kwargs):
 			"status": "error",
 			"message": f"Failed to track event: {e!s}",
 		}
-
-
-__all__ = [
-	"EventProcessor",
-	"RedisStream",
-	"track_event",
-]
