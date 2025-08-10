@@ -23,7 +23,7 @@ from rich.text import Text
 from pulse.api import track_event
 
 frappe.init(
-	site="insights.localhost",
+	site="pulse.localhost",
 	sites_path="/Users/saqibansari/frappe/bench-v13/sites",
 )
 frappe.connect()
@@ -36,25 +36,27 @@ class SiteStats:
 	site_id: int
 	events_sent: int = 0
 	last_event_time: float | None = None
-	status: str = "Active"
+	status: str = "Starting"
 	current_app: str = ""
 	activity_level: float = 1.0
 
 
 class SimulationConfig:
 	def __init__(self):
-		self.number_of_sites = 10
+		self.number_of_sites = 5000  # 5000 sites
 		self.apps = ["frappe", "erpnext", "gameplan", "hrms", "helpdesk"]
 
-		# Timing configuration (in seconds)
-		self.min_event_interval = 0.5
-		self.max_event_interval = 5.0
+		# Timing configuration - adjusted for 0.5 events/sec total across all sites
+		# With 5000 sites, each site should send ~0.0001 events/sec on average
+		# This means roughly 1 event per site every ~2.8 hours (10,000 seconds)
+		self.min_event_interval = 8000  # Minimum 8000 seconds (~2.2 hours) between events
+		self.max_event_interval = 12000  # Maximum 12000 seconds (~3.3 hours) between events
 
-		# Realism parameters
-		self.burst_probability = 0.1
-		self.burst_size_range = (2, 5)
-		self.quiet_period_probability = 0.05
-		self.quiet_duration_range = (10, 30)
+		# Realism parameters - reduced probabilities for less frequent special events
+		self.burst_probability = 0.001  # Very rare bursts (0.1%)
+		self.burst_size_range = (2, 3)  # Smaller bursts
+		self.quiet_period_probability = 0.01  # 1% chance of quiet period
+		self.quiet_duration_range = (3600, 7200)  # 1-2 hour quiet periods
 
 		# Site behavior variation
 		self.site_activity_variation = True
@@ -71,16 +73,16 @@ class SiteSimulator:
 		self.is_active = True
 		self.quiet_until = None
 		self.current_status = "Starting"
-		self.last_app = ""
 
 		# Site characteristics
-		self.activity_multiplier = random.uniform(0.3, 2.0)
+		self.activity_multiplier = random.uniform(0.1, 3.0)  # Wider range for more variation
 		self.preferred_apps = self._select_preferred_apps()
 		self.timezone_offset = random.randint(-12, 12)
 
 		# Update stats callback
 		if self.stats_callback:
 			self.stats_callback(self.site_id, "activity_level", self.activity_multiplier)
+			self.stats_callback(self.site_id, "status", "Starting")
 
 	def _select_preferred_apps(self):
 		apps = self.config.apps.copy()
@@ -110,17 +112,16 @@ class SiteSimulator:
 		max_interval = base_max / self.activity_multiplier
 
 		if self._is_peak_hours():
-			min_interval *= 0.5
-			max_interval *= 0.7
+			min_interval *= 0.7  # Slightly more frequent during peak hours
+			max_interval *= 0.8
 		else:
-			min_interval *= 1.5
-			max_interval *= 2.0
+			min_interval *= 1.3  # Less frequent during off-hours
+			max_interval *= 1.5
 
 		return random.uniform(min_interval, max_interval)
 
 	async def _send_event(self):
 		app_name = self._get_weighted_app()
-		self.last_app = app_name
 
 		try:
 			track_event(
@@ -148,7 +149,7 @@ class SiteSimulator:
 
 	async def _handle_burst_events(self):
 		burst_size = random.randint(*self.config.burst_size_range)
-		self.current_status = f"Burst ({burst_size})"
+		self.current_status = f"Burst({burst_size})"
 
 		if self.stats_callback:
 			self.stats_callback(self.site_id, "status", self.current_status)
@@ -156,19 +157,25 @@ class SiteSimulator:
 		for i in range(burst_size):
 			await self._send_event()
 			if i < burst_size - 1:
-				await asyncio.sleep(random.uniform(0.1, 0.5))
+				await asyncio.sleep(random.uniform(60, 300))  # 1-5 minutes between burst events
 
 		self.current_status = "Active"
+		if self.stats_callback:
+			self.stats_callback(self.site_id, "status", self.current_status)
 
 	async def _enter_quiet_period(self):
 		quiet_duration = random.randint(*self.config.quiet_duration_range)
 		self.quiet_until = time.time() + quiet_duration
-		self.current_status = f"Quiet ({quiet_duration}s)"
+		self.current_status = f"Quiet({quiet_duration // 3600}h)"
 
 		if self.stats_callback:
 			self.stats_callback(self.site_id, "status", self.current_status)
 
 	async def simulate(self):
+		# Initial random delay to spread out the startup
+		initial_delay = random.uniform(0, 3600)  # Up to 1 hour spread
+		await asyncio.sleep(initial_delay)
+
 		self.current_status = "Active"
 		if self.stats_callback:
 			self.stats_callback(self.site_id, "status", self.current_status)
@@ -178,7 +185,7 @@ class SiteSimulator:
 
 			# Check if in quiet period
 			if self.quiet_until and current_time < self.quiet_until:
-				await asyncio.sleep(1)
+				await asyncio.sleep(60)  # Check every minute during quiet period
 				continue
 			else:
 				if self.current_status.startswith("Quiet"):
@@ -206,108 +213,166 @@ class SiteSimulator:
 class TelemetryDashboard:
 	def __init__(self, config):
 		self.config = config
-		self.sites_stats = {}
 		self.total_events = 0
 		self.start_time = time.time()
-		self.throughput_history = deque(maxlen=20)  # Last 20 measurements
+		self.throughput_history = deque(maxlen=60)  # Last 60 measurements
 		self.app_stats = defaultdict(int)
-		self.last_update = time.time()
+		self.last_throughput_calculation = time.time()
 
-		# Initialize site stats
-		for i in range(1, config.number_of_sites + 1):
-			self.sites_stats[i] = SiteStats(site_id=i)
+		# Site status counters (instead of tracking individual sites)
+		self.site_status_counts = {
+			"Starting": config.number_of_sites,  # All sites start as "Starting"
+			"Active": 0,
+			"Burst": 0,
+			"Quiet": 0,
+		}
+
+		# Site activity distribution
+		self.activity_distribution = defaultdict(int)
+
+		# Recent events tracking for better throughput calculation
+		self.recent_events = deque(maxlen=200)
+
+		# Error tracking
+		self.error_count = 0
 
 	def update_stats(self, site_id, event_type, data):
 		"""Callback function for site simulators to update stats"""
-		if site_id not in self.sites_stats:
-			self.sites_stats[site_id] = SiteStats(site_id=site_id)
-
-		site_stats = self.sites_stats[site_id]
+		current_time = time.time()
 
 		if event_type == "event_sent":
-			site_stats.events_sent = data["total"]
-			site_stats.last_event_time = data["timestamp"]
-			site_stats.current_app = data["app"]
 			self.total_events += 1
 			self.app_stats[data["app"]] += 1
+			self.recent_events.append(current_time)
+
 		elif event_type == "status":
-			site_stats.status = data
+			# For performance, only update status counts when status actually changes
+			# We don't track individual sites anymore, just the counts
+			if data == "Active":
+				self.site_status_counts["Starting"] = max(0, self.site_status_counts["Starting"] - 1)
+				self.site_status_counts["Active"] += 1
+			elif data.startswith("Burst"):
+				self.site_status_counts["Active"] = max(0, self.site_status_counts["Active"] - 1)
+				self.site_status_counts["Burst"] += 1
+			elif data.startswith("Quiet"):
+				# Could be transitioning from Active or Burst
+				if self.site_status_counts["Active"] > 0:
+					self.site_status_counts["Active"] -= 1
+				elif self.site_status_counts["Burst"] > 0:
+					self.site_status_counts["Burst"] -= 1
+				self.site_status_counts["Quiet"] += 1
+			# When leaving Burst or Quiet, they go back to Active (handled above)
+
 		elif event_type == "activity_level":
-			site_stats.activity_level = data
+			# Track activity distribution in buckets
+			activity_bucket = round(data * 2) / 2  # Round to nearest 0.5
+			self.activity_distribution[f"{activity_bucket:.1f}x"] += 1
+
+		elif event_type == "error":
+			self.error_count += 1
 
 	def calculate_throughput(self):
-		"""Calculate current throughput"""
+		"""Calculate current throughput with better accuracy for low-frequency events"""
 		current_time = time.time()
-		if current_time - self.last_update >= 1.0:  # Update every second
-			elapsed = current_time - self.start_time
-			if elapsed > 0:
-				current_throughput = self.total_events / elapsed
-				self.throughput_history.append(current_throughput)
-				self.last_update = current_time
+
+		# Calculate throughput every 30 seconds for better accuracy at very low rates
+		if current_time - self.last_throughput_calculation >= 30.0:
+			elapsed_total = current_time - self.start_time
+
+			# Overall average throughput
+			avg_throughput = self.total_events / elapsed_total if elapsed_total > 0 else 0
+
+			# Recent throughput (events in last 5 minutes for low-frequency events)
+			recent_cutoff = current_time - 300  # 5 minutes
+			recent_count = sum(1 for event_time in self.recent_events if event_time > recent_cutoff)
+			recent_throughput = recent_count / 300.0  # Events per second over 5 minutes
+
+			self.throughput_history.append(recent_throughput)
+			self.last_throughput_calculation = current_time
+
+			return avg_throughput, recent_throughput
+
+		# Return last calculated values or defaults
+		elapsed_total = current_time - self.start_time
+		avg_throughput = self.total_events / elapsed_total if elapsed_total > 0 else 0
+		recent_throughput = self.throughput_history[-1] if self.throughput_history else 0
+		return avg_throughput, recent_throughput
 
 	def create_overview_panel(self):
 		"""Create the main overview panel"""
 		elapsed = time.time() - self.start_time
+		avg_throughput, recent_throughput = self.calculate_throughput()
 
-		# Calculate stats
-		active_sites = sum(1 for s in self.sites_stats.values() if s.status != "Quiet")
-		avg_throughput = self.total_events / elapsed if elapsed > 0 else 0
+		# Format time nicely
+		hours = int(elapsed // 3600)
+		minutes = int((elapsed % 3600) // 60)
+		seconds = int(elapsed % 60)
+		time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-		# Recent throughput
-		recent_throughput = self.throughput_history[-1] if self.throughput_history else 0
+		# Calculate next event estimate
+		if recent_throughput > 0:
+			next_event_est = int(1.0 / recent_throughput)
+			if next_event_est > 3600:
+				next_event_str = f"~{next_event_est // 3600}h {(next_event_est % 3600) // 60}m"
+			elif next_event_est > 60:
+				next_event_str = f"~{next_event_est // 60}m {next_event_est % 60}s"
+			else:
+				next_event_str = f"~{next_event_est}s"
+		else:
+			next_event_str = "Calculating..."
+
+		# Color code the throughput based on target
+		target = 0.5
+		throughput_color = "green" if abs(recent_throughput - target) < 0.1 else "yellow"
 
 		overview_text = f"""
-[bold cyan]🚀 Telemetry Simulation Dashboard[/bold cyan]
+[bold cyan]🚀 Large Scale Telemetry Simulation[/bold cyan]
 
-[green]Runtime:[/green] {elapsed:.0f}s
+[green]Runtime:[/green] {time_str}
+[green]Total Sites:[/green] {self.config.number_of_sites:,}
 [green]Total Events:[/green] {self.total_events:,}
-[green]Active Sites:[/green] {active_sites}/{self.config.number_of_sites}
-[green]Avg Throughput:[/green] {avg_throughput:.2f} events/sec
-[green]Current Rate:[/green] {recent_throughput:.2f} events/sec
+[green]Avg Throughput:[/green] {avg_throughput:.6f} events/sec
+[{throughput_color}]Recent Rate:[/{throughput_color}] {recent_throughput:.6f} events/sec
+[blue]Target Rate:[/blue] 0.500000 events/sec
+[blue]Next Event Est:[/blue] {next_event_str}
+[red]Errors:[/red] {self.error_count}
         """.strip()
 
 		return Panel(overview_text, title="📊 Overview", border_style="cyan")
 
-	def create_sites_table(self):
-		"""Create the sites status table"""
-		table = Table(title="🌐 Site Status", show_header=True, header_style="bold magenta")
-		table.add_column("Site", style="cyan", no_wrap=True)
-		table.add_column("Status", style="green")
-		table.add_column("Events", justify="right", style="blue")
-		table.add_column("Last App", style="yellow")
-		table.add_column("Activity", justify="right", style="red")
-		table.add_column("Last Event", style="dim")
+	def create_sites_status_panel(self):
+		"""Create site status summary panel (no individual site listing)"""
+		total_sites = self.config.number_of_sites
 
-		# Sort by site_id
-		sorted_sites = sorted(self.sites_stats.items())
+		status_text = []
+		status_text.append("[bold yellow]📊 Site Status Distribution[/bold yellow]\n")
 
-		for site_id, stats in sorted_sites:
-			# Status styling
-			status_style = (
-				"green" if stats.status == "Active" else "yellow" if "Burst" in stats.status else "red"
-			)
+		for status, count in self.site_status_counts.items():
+			percentage = (count / total_sites * 100) if total_sites > 0 else 0
 
-			# Last event timing
-			if stats.last_event_time:
-				last_event = f"{time.time() - stats.last_event_time:.1f}s ago"
-			else:
-				last_event = "Never"
+			# Color coding for different statuses
+			color_map = {"Active": "green", "Burst": "bright_yellow", "Quiet": "red", "Starting": "blue"}
+			color = color_map.get(status, "white")
 
-			table.add_row(
-				f"Site {site_id}",
-				f"[{status_style}]{stats.status}[/{status_style}]",
-				f"{stats.events_sent:,}",
-				stats.current_app or "-",
-				f"{stats.activity_level:.1f}x",
-				last_event,
-			)
+			# Create progress bar (scaled for visibility)
+			bar_length = max(1, int(percentage / 2)) if percentage > 0 else 0
+			bar = "█" * bar_length + "░" * max(0, 50 - bar_length)
 
-		return table
+			status_text.append(f"[{color}]{status:8}[/{color}] {bar} {count:6,} ({percentage:5.1f}%)")
+
+		# Add activity distribution summary (top 5 most common activity levels)
+		if self.activity_distribution:
+			status_text.append("\n[bold yellow]🎯 Top Activity Levels[/bold yellow]")
+			sorted_activities = sorted(self.activity_distribution.items(), key=lambda x: x[1], reverse=True)
+			for activity, count in sorted_activities[:5]:
+				status_text.append(f"  [cyan]{activity:6}[/cyan] : {count:5,} sites")
+
+		return Panel("\n".join(status_text), title="🌐 Site Status Summary", border_style="blue")
 
 	def create_app_stats_panel(self):
 		"""Create app usage statistics"""
 		if not self.app_stats:
-			return Panel("No data yet...", title="📱 App Usage")
+			return Panel("No events yet...", title="📱 App Usage")
 
 		total = sum(self.app_stats.values())
 		stats_text = []
@@ -319,43 +384,69 @@ class TelemetryDashboard:
 			percentage = (count / total * 100) if total > 0 else 0
 			bar_length = int(percentage / 5)  # Scale bar
 			bar = "█" * bar_length + "░" * (20 - bar_length)
-			stats_text.append(f"{app:10} {bar} {count:4d} ({percentage:4.1f}%)")
+			stats_text.append(f"{app:10} {bar} {count:5d} ({percentage:4.1f}%)")
 
 		return Panel("\n".join(stats_text), title="📱 App Usage", border_style="yellow")
 
 	def create_throughput_graph(self):
-		"""Create a simple ASCII throughput graph"""
+		"""Create throughput history graph optimized for low-frequency events"""
 		if len(self.throughput_history) < 2:
-			return Panel("Collecting data...", title="📈 Throughput History")
+			return Panel("Collecting data...\n(Updates every 30 seconds)", title="📈 Throughput History")
 
-		# Simple ASCII graph
-		max_val = max(self.throughput_history) if self.throughput_history else 1
 		graph_lines = []
+		graph_lines.append("Recent Throughput (events/sec, 5-min windows):")
+		graph_lines.append("")
 
-		for i, value in enumerate(list(self.throughput_history)[-10:]):  # Last 10 points
-			bar_height = int((value / max_val) * 10) if max_val > 0 else 0
-			bar = "█" * bar_height + "░" * (10 - bar_height)
-			graph_lines.append(f"{i:2d}: {bar} {value:5.2f}")
+		# Show last 15 data points
+		recent_data = list(self.throughput_history)[-15:]
 
-		return Panel("\n".join(graph_lines), title="📈 Throughput (events/sec)", border_style="green")
+		if not recent_data:
+			graph_lines.append("No data available")
+		else:
+			# Use target rate as scale reference
+			target_rate = 0.5
+			display_max = max(max(recent_data), target_rate) * 1.2  # 20% headroom
+
+			for i, value in enumerate(recent_data):
+				# Scale bar to show relative values
+				bar_height = int((value / display_max) * 25) if display_max > 0 else 0
+				bar = "█" * bar_height + "░" * (25 - bar_height)
+
+				# Show time offset (30-second intervals)
+				time_offset = (len(recent_data) - i) * 30
+				minutes_ago = time_offset // 60
+
+				# Color code based on proximity to target
+				if abs(value - target_rate) < 0.05:
+					color = "green"
+				elif abs(value - target_rate) < 0.1:
+					color = "yellow"
+				else:
+					color = "red"
+
+				graph_lines.append(f"{minutes_ago:2d}m ago: [{color}]{bar}[/{color}] {value:.6f}")
+
+			graph_lines.append("")
+			graph_lines.append(f"Scale: 0 to {display_max:.4f} events/sec")
+			graph_lines.append(f"[green]Target: {target_rate:.6f} events/sec[/green]")
+
+		return Panel("\n".join(graph_lines), title="📈 Throughput History", border_style="green")
 
 	def create_layout(self):
-		"""Create the complete dashboard layout"""
-		self.calculate_throughput()
-
-		# Create layout components
+		"""Create the complete dashboard layout optimized for large scale simulation"""
+		# Create all layout components
 		overview_panel = self.create_overview_panel()
 		app_stats_panel = self.create_app_stats_panel()
 		throughput_panel = self.create_throughput_graph()
-		sites_table = self.create_sites_table()
+		sites_status_panel = self.create_sites_status_panel()
 
-		# Create layout
+		# Create layout structure
 		layout = Layout()
 
 		layout.split_column(
-			Layout(overview_panel, size=8),
+			Layout(overview_panel, size=11),
 			Layout(name="middle", ratio=2),
-			Layout(sites_table, name="bottom", size=12),
+			Layout(sites_status_panel, name="bottom", size=16),
 		)
 
 		layout["middle"].split_row(Layout(app_stats_panel), Layout(throughput_panel))
@@ -372,68 +463,91 @@ class TelemetrySimulation:
 
 	async def run_simulation(self):
 		"""Run the simulation with live dashboard"""
+		console.print("[bold green]🚀 Initializing Large Scale Simulation...[/bold green]")
+		console.print(f"[blue]Creating {self.config.number_of_sites:,} site simulators...[/blue]")
+
 		# Initialize sites with dashboard callback
-		self.sites = [
-			SiteSimulator(i, self.config, self.dashboard.update_stats)
-			for i in range(1, self.config.number_of_sites + 1)
-		]
+		self.sites = []
+		batch_size = 1000
 
-		# Create site simulation tasks with proper coroutine handling
-		async def create_site_task(site_instance, delay):
-			await asyncio.sleep(delay)
-			await site_instance.simulate()
+		# Create sites in batches to avoid memory issues
+		for batch_start in range(0, self.config.number_of_sites, batch_size):
+			batch_end = min(batch_start + batch_size, self.config.number_of_sites)
+			batch_sites = [
+				SiteSimulator(i, self.config, self.dashboard.update_stats)
+				for i in range(batch_start + 1, batch_end + 1)
+			]
+			self.sites.extend(batch_sites)
+			console.print(f"[green]Created sites {batch_start + 1:,} to {batch_end:,}[/green]")
 
-		# Create tasks for all sites with staggered startup
-		site_tasks = []
-		for i, site in enumerate(self.sites):
-			startup_delay = random.uniform(0, 5)
-			task = create_site_task(site, startup_delay)
-			site_tasks.append(task)
+		console.print(f"[green]✅ All {len(self.sites):,} sites created![/green]")
+		console.print("[blue]Starting simulation with live dashboard...[/blue]")
+		console.print("[dim]Note: Events will be very infrequent (~0.5/sec total). Be patient![/dim]")
 
 		self.is_running = True
 
 		# Start simulation with live dashboard
-		with Live(self.dashboard.create_layout(), refresh_per_second=2, screen=True) as live:
+		with Live(self.dashboard.create_layout(), refresh_per_second=0.1, screen=True) as live:
 			try:
-				# Update dashboard in background
+
 				async def update_dashboard():
 					while self.is_running:
 						try:
 							live.update(self.dashboard.create_layout())
 						except Exception:
-							# Handle any layout update errors gracefully
-							pass
-						await asyncio.sleep(0.5)  # Update twice per second
+							pass  # Silently handle dashboard errors
+						await asyncio.sleep(10.0)  # Update every 10 seconds
+
+				# Create all site simulation tasks
+				site_tasks = [site.simulate() for site in self.sites]
 
 				# Run dashboard updater and all site simulations
 				await asyncio.gather(update_dashboard(), *site_tasks, return_exceptions=True)
 
 			except KeyboardInterrupt:
-				console.print("\n[red]Simulation interrupted by user[/red]")
+				console.print("\n[red]⏹️  Simulation interrupted by user[/red]")
 			finally:
 				self.is_running = False
 
+				# Mark all sites as inactive
+				for site in self.sites:
+					site.is_active = False
+
 				# Final summary
-				console.print("\n" + "=" * 60)
+				elapsed = time.time() - self.dashboard.start_time
+				console.print("\n" + "=" * 70)
 				console.print("[bold green]📊 Final Summary[/bold green]")
-				console.print(f"Total Events: {self.dashboard.total_events:,}")
-				console.print(f"Runtime: {time.time() - self.dashboard.start_time:.1f}s")
-				avg_throughput = self.dashboard.total_events / (time.time() - self.dashboard.start_time)
-				console.print(f"Average Throughput: {avg_throughput:.2f} events/sec")
-				console.print("=" * 60)
+				console.print(
+					f"[cyan]Runtime:[/cyan] {elapsed // 3600:.0f}h {(elapsed % 3600) // 60:.0f}m {elapsed % 60:.0f}s"
+				)
+				console.print(f"[cyan]Total Events:[/cyan] {self.dashboard.total_events:,}")
+				console.print(
+					f"[cyan]Average Throughput:[/cyan] {self.dashboard.total_events / elapsed:.6f} events/sec"
+				)
+				console.print("[cyan]Target Throughput:[/cyan] 0.500000 events/sec")
+				console.print(
+					f"[cyan]Accuracy:[/cyan] {abs(self.dashboard.total_events / elapsed - 0.5):.6f} deviation"
+				)
+				if self.dashboard.error_count > 0:
+					console.print(f"[red]Errors:[/red] {self.dashboard.error_count}")
+				console.print("=" * 70)
 
 
 @click.command()
-@click.option("--sites", default=10, help="Number of sites to simulate")
-@click.option("--min-interval", default=0.5, help="Minimum event interval (seconds)")
-@click.option("--max-interval", default=5.0, help="Maximum event interval (seconds)")
+@click.option("--sites", default=5000, help="Number of sites to simulate")
+@click.option("--min-interval", default=8000, help="Minimum event interval (seconds)")
+@click.option("--max-interval", default=12000, help="Maximum event interval (seconds)")
 @click.option("--apps", default="frappe,erpnext,gameplan,hrms,helpdesk", help="Comma-separated list of apps")
-def main(sites, min_interval, max_interval, apps):
-	"""🚀 Realistic Telemetry Simulation with Live Dashboard
+@click.option("--target-rate", default=0.5, help="Target events per second across all sites")
+def main(sites, min_interval, max_interval, apps, target_rate):
+	"""🚀 Large Scale Telemetry Simulation with Live Dashboard
+
+	Simulates thousands of sites sending telemetry events at realistic intervals.
+	Optimized for very low frequency events (~0.5 events/sec total).
 
 	Press Ctrl+C to stop the simulation at any time.
 	"""
-	console.print("[bold green]🚀 Starting Telemetry Simulation...[/bold green]")
+	console.print("[bold green]🚀 Starting Large Scale Telemetry Simulation...[/bold green]")
 
 	# Update config based on CLI args
 	config = SimulationConfig()
@@ -442,7 +556,17 @@ def main(sites, min_interval, max_interval, apps):
 	config.max_event_interval = max_interval
 	config.apps = [app.strip() for app in apps.split(",")]
 
-	console.print(f"Configuration: {sites} sites, {len(config.apps)} apps")
+	# Auto-adjust intervals if target rate is specified
+	if target_rate != 0.5:
+		events_per_site_per_sec = target_rate / sites
+		avg_interval = 1.0 / events_per_site_per_sec
+		config.min_event_interval = int(avg_interval * 0.8)
+		config.max_event_interval = int(avg_interval * 1.2)
+		console.print(f"[yellow]Auto-adjusted intervals for {target_rate} events/sec target[/yellow]")
+
+	console.print(f"[cyan]Configuration:[/cyan] {sites:,} sites, {len(config.apps)} apps")
+	console.print(f"[cyan]Intervals:[/cyan] {config.min_event_interval}-{config.max_event_interval}s")
+	console.print(f"[cyan]Target Rate:[/cyan] {target_rate} events/sec")
 	console.print("[dim]Starting in 3 seconds... Press Ctrl+C to stop anytime[/dim]")
 	time.sleep(3)
 
