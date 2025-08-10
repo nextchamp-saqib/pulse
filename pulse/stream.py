@@ -47,7 +47,7 @@ class RedisStream:
 		except Exception:
 			return 0
 
-	def read(self, count=50, block=None, from_consumer_group=False):
+	def read(self, count=500, block=None, from_consumer_group=False):
 		try:
 			if from_consumer_group:
 				self.create_consumer_group()
