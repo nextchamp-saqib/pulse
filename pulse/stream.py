@@ -4,8 +4,6 @@ import redis
 from frappe.utils import cstr
 
 from .constants import (
-	CONSUMER_GROUP_EXISTS_ERROR,
-	CONSUMER_GROUP_NAME,
 	PENDING_MIN_IDLE_MS,
 	STREAM_MAX_LENGTH,
 )
@@ -19,7 +17,9 @@ class RedisStream:
 	def __init__(self):
 		self.name = f"pulse:events:{frappe.local.site}"
 		self._client = None
+		self.consumer_group = "event_processors"
 		self.consumer = "processor"
+		self.create_consumer_group()
 
 	@property
 	def client(self):
@@ -69,7 +69,7 @@ class RedisStream:
 		"""Read messages pending for this consumer using id='0'."""
 		return self._extract_entries(
 			self.client.xreadgroup(
-				CONSUMER_GROUP_NAME,
+				self.consumer_group,
 				self.consumer,
 				{self.name: "0"},
 				count=count,
@@ -81,7 +81,7 @@ class RedisStream:
 		try:
 			result = self.client.xautoclaim(
 				self.name,
-				CONSUMER_GROUP_NAME,
+				self.consumer_group,
 				self.consumer,
 				min_idle_time=PENDING_MIN_IDLE_MS,
 				start_id="0-0",
@@ -99,7 +99,7 @@ class RedisStream:
 		"""Read new entries (>) for this consumer group."""
 		return self._extract_entries(
 			self.client.xreadgroup(
-				CONSUMER_GROUP_NAME,
+				self.consumer_group,
 				self.consumer,
 				{self.name: ">"},
 				count=count,
@@ -114,6 +114,7 @@ class RedisStream:
 
 		Returns a list of dicts: [{"id": str, "data": dict}, ...]
 		"""
+		count = int(count) if count > 0 else 500
 		try:
 			raw = []
 			if from_consumer_group:
@@ -128,13 +129,13 @@ class RedisStream:
 			return []
 
 	def create_consumer_group(self):
-		if self.consumer_exists(CONSUMER_GROUP_NAME):
+		if self.consumer_exists(self.consumer_group):
 			return
 
 		try:
-			self.client.xgroup_create(self.name, CONSUMER_GROUP_NAME, id="0", mkstream=True)
+			self.client.xgroup_create(self.name, self.consumer_group, id="0", mkstream=True)
 		except redis.exceptions.ResponseError as e:
-			if CONSUMER_GROUP_EXISTS_ERROR not in str(e):
+			if "BUSYGROUP" not in str(e):
 				raise
 
 	def consumer_exists(self, group_name):
@@ -164,14 +165,14 @@ class RedisStream:
 		try:
 			if not event_ids:
 				return
-			self.client.xack(self.name, CONSUMER_GROUP_NAME, *event_ids)
+			self.client.xack(self.name, self.consumer_group, *event_ids)
 		except Exception as e:
 			logger.error(f"Failed to acknowledge events: {e!s}")
 
 	def pending_length(self) -> int:
 		"""Return count of delivered-but-unacknowledged messages (PEL size)."""
 		try:
-			info = self.client.xpending(self.name, CONSUMER_GROUP_NAME)
+			info = self.client.xpending(self.name, self.consumer_group)
 			return int(info.get("pending", 0))
 		except Exception:
 			return 0
@@ -181,7 +182,7 @@ class RedisStream:
 		try:
 			for g in self.client.xinfo_groups(self.name) or []:
 				name = decode(g.get("name"))
-				if name == CONSUMER_GROUP_NAME:
+				if name == self.consumer_group:
 					return int(g.get("lag", 0))
 			return 0
 		except Exception:

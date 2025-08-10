@@ -5,9 +5,7 @@ API_RATE_LIMIT = 100
 API_RATE_LIMIT_SECONDS = 60
 
 # Redis Streams / Consumer Groups
-CONSUMER_GROUP_NAME = "event_processors"
-STREAM_MAX_LENGTH = 100000
-CONSUMER_GROUP_EXISTS_ERROR = "BUSYGROUP"
+STREAM_MAX_LENGTH = 100_000
 
 # Pending recovery
 # Minimum idle time (in milliseconds) before we try to steal/claim a pending
