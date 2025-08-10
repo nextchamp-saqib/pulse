@@ -28,13 +28,12 @@ def _ensure_table(conn):
 	conn.execute(
 		"""
 			CREATE TABLE IF NOT EXISTS event (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					event_id TEXT,
-					site_name TEXT,
-					event_name TEXT,
-					app_name TEXT,
+					event_id TEXT NOT NULL,
+					site_name TEXT NOT NULL,
+					event_name TEXT NOT NULL,
+					app_name TEXT NOT NULL,
 					app_version TEXT,
-					timestamp TIMESTAMP,
+					timestamp TIMESTAMP NOT NULL,
 					additional_data JSON,
 					created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 			)

@@ -8,6 +8,7 @@ from ..stream import RedisStream
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=API_RATE_LIMIT, seconds=API_RATE_LIMIT_SECONDS)
 def track_event(site_name, event, app_name, app_version, timestamp, **kwargs):
+	# TODO: check api-key
 	try:
 		stream = RedisStream()
 		stream.add(

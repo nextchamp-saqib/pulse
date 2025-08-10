@@ -24,7 +24,7 @@ class EventProcessor:
 
 	def process(self):
 		try:
-			event_list = self.stream.read(from_consumer_group=True)
+			event_list = self.stream.read(count=STREAM_MAX_LENGTH / 2, from_consumer_group=True)
 
 			if not event_list:
 				return 0
@@ -81,7 +81,7 @@ class EventProcessor:
 	def _prepare_event(self, event):
 		event_data = event.get("data", {})
 		log_data = {
-			"id": event.get("id"),
+			"event_id": event.get("id"),
 			"site_name": event_data.get("site_name"),
 			"event_name": event_data.get("event"),
 			"app_name": event_data.get("app_name"),
@@ -106,7 +106,6 @@ class EventProcessor:
 			return None
 
 		return log_data
-
 
 
 def process_events():
