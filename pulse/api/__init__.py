@@ -1,8 +1,8 @@
 import frappe
 from frappe.rate_limiter import rate_limit
 
-from .constants import API_RATE_LIMIT, API_RATE_LIMIT_SECONDS
-from .stream import RedisStream
+from ..constants import API_RATE_LIMIT, API_RATE_LIMIT_SECONDS
+from ..stream import RedisStream
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

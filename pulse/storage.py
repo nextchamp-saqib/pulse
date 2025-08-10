@@ -1,5 +1,6 @@
 import json
 import os
+from contextlib import contextmanager
 
 import duckdb
 import frappe
@@ -9,43 +10,67 @@ from .logger import get_logger
 logger = get_logger()
 
 
-def _get_db():
-	db_dir = frappe.utils.get_site_path("private", "files")
-	db_path = os.path.join(db_dir, "pulse.duckdb")
-	conn = duckdb.connect(db_path)
-	return conn
+def _get_db_path():
+	return frappe.utils.get_site_path("private", "files", "pulse.duckdb")
+
+def _get_db(read_only=True, **kwargs):
+	return duckdb.connect(_get_db_path(), read_only=read_only, **kwargs)
+
+def get_db_size() -> int:
+	try:
+		path = _get_db_path()
+		return int(os.path.getsize(path))
+	except Exception:
+		return 0
 
 
-def _create_table(conn):
+def _ensure_table(conn):
 	conn.execute(
 		"""
-			CREATE TABLE IF NOT EXISTS events (
-					id TEXT,
+			CREATE TABLE IF NOT EXISTS event (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					event_id TEXT,
 					site_name TEXT,
 					event_name TEXT,
 					app_name TEXT,
 					app_version TEXT,
 					timestamp TIMESTAMP,
-					additional_data JSON
+					additional_data JSON,
+					created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 			)
 		"""
 	)
 
 
-def store_batch_in_duckdb(log_data_list):
-	conn = _get_db()
+@contextmanager
+def _transaction(conn):
+	"""Context manager to wrap a DuckDB transaction with automatic rollback on error."""
+	conn.execute("BEGIN")
 	try:
-		_create_table(conn)
+		yield
+		conn.execute("COMMIT")
+	except Exception:
+		try:
+			conn.execute("ROLLBACK")
+		except Exception:
+			pass
+		raise
+
+
+def store_batch_in_duckdb(log_data_list):
+	conn = _get_db(read_only=False)
+	try:
+		_ensure_table(conn)
 
 		rows = [
 			(
-				data["id"],
+				data["event_id"],
 				data["site_name"],
 				data["event_name"],
 				data["app_name"],
 				data["app_version"],
 				data["timestamp"],
-				json.dumps(data["additional_data"]),
+				json.dumps(data.get("additional_data", {})),
 			)
 			for data in log_data_list
 		]
@@ -53,24 +78,14 @@ def store_batch_in_duckdb(log_data_list):
 		if not rows:
 			return
 
-		# Single-statement bulk insert with explicit transaction for atomicity
-		conn.execute("BEGIN")
-		placeholders = ", ".join(["(?, ?, ?, ?, ?, ?, ?)"] * len(rows))
-		flat_params = [item for row in rows for item in row]
-		conn.execute(
-			f"""
-				INSERT INTO events (id, site_name, event_name, app_name, app_version, timestamp, additional_data)
-				VALUES {placeholders}
-			""",
-			flat_params,
-		)
-		conn.execute("COMMIT")
+		insert_sql = """
+			INSERT INTO event (event_id, site_name, event_name, app_name, app_version, timestamp, additional_data)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		"""
+
+		with _transaction(conn):
+			conn.executemany(insert_sql, rows)
 	except duckdb.Error as e:
-		# Attempt rollback on failure
-		try:
-			conn.execute("ROLLBACK")
-		except Exception:
-			pass
 		logger.error(f"Failed to store event batch in DuckDB: {e!s}")
 		raise
 	finally:
