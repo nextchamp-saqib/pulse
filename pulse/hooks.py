@@ -144,9 +144,7 @@ app_license = "AGPLv3"
 # ---------------
 
 scheduler_events = {
-	"cron": {
-		"*/5 * * * *": ["pulse.processor.process_events"],
-	},
+	"all": ["pulse.processor.process_events"],
 }
 
 # Testing

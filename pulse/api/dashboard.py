@@ -2,12 +2,14 @@ import time
 from contextlib import closing
 from datetime import datetime, timezone
 
+import frappe
+
 from pulse.storage import _get_db, get_db_size
 
 from ..stream import RedisStream
 
 # Constants for clarity
-HOUR_WINDOW_SECONDS = 3600
+INTERVAL = 60 * 10
 MAX_SAMPLE_ROWS = 2000
 
 
@@ -19,7 +21,7 @@ def _events_received_last_hour(stream: RedisStream) -> int:
 	"""Count events appended to Redis Stream in the last 60 minutes."""
 	try:
 		now_ms = int(time.time() * 1000)
-		start_id = f"{now_ms - (HOUR_WINDOW_SECONDS * 1000)}-0"
+		start_id = f"{now_ms - (INTERVAL * 1000)}-0"
 		# '+' means maximum possible ID
 		items = stream.client.xrange(stream.name, min=start_id, max="+")
 		return len(items or [])
@@ -35,7 +37,7 @@ def _events_processed_last_hour() -> int:
 				"""
 				SELECT COUNT(*)
 				FROM event
-				WHERE created_at >= now() - INTERVAL '1 hour'
+				WHERE created_at >= now() - INTERVAL '10 minutes'
 				"""
 			).fetchone()[0]
 			return int(count or 0)
@@ -51,7 +53,7 @@ def _processing_lag_seconds() -> int:
 				f"""
 				SELECT event_id, created_at
 				FROM event
-				WHERE created_at >= now() - INTERVAL '1 hour'
+				WHERE created_at >= now() - INTERVAL '10 minutes'
 				LIMIT {MAX_SAMPLE_ROWS}
 				"""
 			).fetchall()
@@ -113,6 +115,7 @@ def _stream_memory_bytes(stream: RedisStream) -> int:
 		return 0
 
 
+@frappe.whitelist()
 def get_stats():
 	"""Compute and return live ingestion/processing stats."""
 	stream = RedisStream()
