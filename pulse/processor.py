@@ -24,7 +24,8 @@ class EventProcessor:
 
 	def process(self):
 		try:
-			event_list = self.stream.read(count=STREAM_MAX_LENGTH / 2, from_consumer_group=True)
+			count = STREAM_MAX_LENGTH / 2
+			event_list = self.stream.read(count=count, from_consumer_group=True)
 
 			if not event_list:
 				return 0
