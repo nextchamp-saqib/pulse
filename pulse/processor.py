@@ -7,6 +7,8 @@ from .stream import RedisStream
 
 logger = get_logger()
 
+READ_COUNT = STREAM_MAX_LENGTH / 2
+
 
 class EventProcessor:
 	def __init__(self):
@@ -24,89 +26,104 @@ class EventProcessor:
 
 	def process(self):
 		try:
-			count = STREAM_MAX_LENGTH / 2
-			event_list = self.stream.read(count=count, from_consumer_group=True)
+			events = self._read_events()
 
-			if not event_list:
+			if not events:
 				return 0
 
-			processed_event_ids = []
-			failed_event_ids = []
+			batch, batch_ids, skipped_ids, failed_ids = self._build_batch(events)
 
-			batch_logs = []
-			batch_log_ids = []
-			skipped_ids = []
-
-			for event in event_list:
-				try:
-					log_data = self._prepare_event(event)
-					if log_data is None:
-						# Event skipped due to missing mandatory fields; treat as processed for ack
-						skipped_ids.append(event.get("id"))
-						continue
-					batch_logs.append(log_data)
-					batch_log_ids.append(event.get("id"))
-				except Exception as e:
-					logger.error(f"Failed to prepare event: {e!s}")
-					failed_event_ids.append(event.get("id"))
-
-			# Write the valid events in a single batch
-			if batch_logs:
-				try:
-					store_batch_in_duckdb(batch_logs)
-					processed_event_ids.extend(batch_log_ids)
-				except Exception as e:
-					logger.error(f"Failed to store event batch in DuckDB: {e!s}")
-					failed_event_ids.extend(batch_log_ids)
+			processed_ids, batch_failed_ids = self._store_batch(batch, batch_ids)
+			failed_ids.extend(batch_failed_ids)
 
 			# Add skipped ids (considered processed for ack purposes)
 			if skipped_ids:
-				processed_event_ids.extend(skipped_ids)
+				processed_ids.extend(skipped_ids)
 
 			# Only acknowledge successfully processed events
-			if processed_event_ids:
-				self.stream.acknowledge_events(processed_event_ids)
+			if processed_ids:
+				self.stream.acknowledge_events(processed_ids)
 
 			# Log metrics for RQ job monitoring
-			if processed_event_ids or failed_event_ids:
-				logger.info(
-					f"Processed {len(processed_event_ids)} events, failed {len(failed_event_ids)} events"
-				)
+			if processed_ids or failed_ids:
+				logger.info(f"Processed {len(processed_ids)} events, failed {len(failed_ids)} events")
 
-			return len(processed_event_ids)
+			return len(processed_ids)
 
 		except Exception as e:
 			logger.error(f"Error processing events: {e!s}")
 			return 0  # Return 0 instead of raising to avoid RQ retry
 
+	def _read_events(self):
+		return self.stream.read(count=READ_COUNT, from_consumer_group=True)
+
+	def _build_batch(self, events):
+		batch = []
+		batch_ids = []
+		skipped_ids = []
+		failed_ids = []
+
+		for event in events:
+			try:
+				entry = self._prepare_event(event)
+				if entry is None:
+					# Event skipped due to missing mandatory fields; treat as processed for ack
+					skipped_ids.append(event.get("id"))
+					continue
+				batch.append(entry)
+				batch_ids.append(event.get("id"))
+			except Exception as entry:
+				logger.error(f"Failed to prepare event: {entry!s}")
+				failed_ids.append(event.get("id"))
+
+		return batch, batch_ids, skipped_ids, failed_ids
+
+	def _store_batch(self, batch, batch_ids):
+		processed_ids = []
+		failed_ids = []
+
+		if not batch:
+			return processed_ids, failed_ids
+
+		try:
+			store_batch_in_duckdb(batch)
+			processed_ids.extend(batch_ids)
+		except Exception as e:
+			logger.error(f"Failed to store event batch in DuckDB: {e!s}")
+			failed_ids.extend(batch_ids)
+
+		return processed_ids, failed_ids
+
 	def _prepare_event(self, event):
-		event_data = event.get("data", {})
-		log_data = {
-			"event_id": event.get("id"),
-			"site_name": event_data.get("site_name"),
-			"event_name": event_data.get("event"),
-			"app_name": event_data.get("app_name"),
-			"app_version": event_data.get("app_version"),
-			"timestamp": event_data.get("timestamp"),
-			"additional_data": {
+		data = event.get("data", {})
+		_event = {
+			"id": event.get("id"),
+			"site": data.get("site"),
+			"name": data.get("name"),
+			"app": data.get("app"),
+			"app_version": data.get("app_version"),
+			"frappe_version": data.get("frappe_version"),
+			"created_at": data.get("timestamp"),
+			"data": {
 				k: v
-				for k, v in event_data.items()
+				for k, v in data.items()
 				if k
 				not in [
-					"site_name",
-					"event",
-					"app_name",
+					"site",
+					"name",
+					"app",
 					"app_version",
-					"timestamp",
+					"frappe_version",
+					"created_at",
 				]
 			},
 		}
 
-		if not log_data["site_name"] or not log_data["event_name"]:
-			logger.debug(f"Skipping event with missing site_name or event_name: {log_data}")
+		if not _event["site"] or not _event["name"]:
+			logger.debug(f"Skipping event with missing site or event name: {_event}")
 			return None
 
-		return log_data
+		return _event
 
 
 def process_events():

@@ -20,7 +20,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 from rich.text import Text
 
-from pulse.api import track_event
+from pulse.api import ingest
 
 frappe.init(
 	site="pulse.localhost",
@@ -123,14 +123,16 @@ class SiteSimulator:
 	async def _send_event(self):
 		app_name = self._get_weighted_app()
 
+		event = {
+			"site": f"site_{self.site_id}",
+			"name": "app_activity",
+			"app": app_name,
+			"app_version": f"1.{random.randint(0, 5)}.{random.randint(0, 10)}",
+			"timestamp": frappe.utils.now_datetime(),
+		}
+
 		try:
-			track_event(
-				site_name=f"site_{self.site_id}",
-				event="app_pulse",
-				app_name=app_name,
-				app_version=f"1.{random.randint(0, 5)}.{random.randint(0, 10)}",
-				timestamp=frappe.utils.now_datetime(),
-			)
+			ingest([event])
 			self.events_sent += 1
 
 			# Update stats

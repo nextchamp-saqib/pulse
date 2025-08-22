@@ -7,7 +7,7 @@ from ..stream import RedisStream
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=API_RATE_LIMIT, seconds=API_RATE_LIMIT_SECONDS)
-def ingest_events(events):
+def ingest(events):
 	check_auth()
 	validate_events(events)
 

@@ -15,7 +15,7 @@ class FrappeErrorLogHandler(logging.Handler):
 		try:
 			# Use formatter if provided, else fallback to basic message
 			msg = self.format(record) if self.formatter else record.getMessage()
-			title = f"pulse:{record.levelname}"
+			title = f"pulse:{record.levelname}".lower()
 			# Store into Error Log doctype
 			frappe.log_error(title=title, message=msg)
 		except Exception:
