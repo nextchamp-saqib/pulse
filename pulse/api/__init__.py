@@ -13,7 +13,7 @@ def ingest(events):
 	validate_events(events)
 
 	try:
-		stream = RedisStream.get("pulse:events")
+		stream = RedisStream.init("pulse:events")
 		for event in events:
 			stream.add(event)
 	except Exception:

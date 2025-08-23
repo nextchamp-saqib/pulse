@@ -43,7 +43,7 @@ class RedisStream(Document):
 	# end: auto-generated types
 
 	@classmethod
-	def get(cls, name) -> "RedisStream":
+	def init(cls, name) -> "RedisStream":
 		return RedisStream(
 			doctype="Redis Stream",
 			name=name,

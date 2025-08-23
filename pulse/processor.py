@@ -13,7 +13,7 @@ READ_COUNT = int(STREAM_MAX_LENGTH / 2)
 
 class EventProcessor:
 	def __init__(self):
-		self.stream = RedisStream.get("pulse:events")
+		self.stream = RedisStream.init("pulse:events")
 
 	def _warn_if_stream_near_capacity(self):
 		try:
