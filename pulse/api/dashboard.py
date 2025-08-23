@@ -37,7 +37,7 @@ def _events_processed_last_hour() -> int:
 				"""
 				SELECT COUNT(*)
 				FROM event
-				WHERE created_at >= now() - INTERVAL '10 minutes'
+				WHERE timestamp >= now() - INTERVAL '10 minutes'
 				"""
 			).fetchone()[0]
 			return int(count or 0)
@@ -51,9 +51,9 @@ def _processing_lag_seconds() -> int:
 		with closing(_get_db()) as conn:
 			rows = conn.execute(
 				f"""
-				SELECT event_id, created_at
+				SELECT event_id, timestamp
 				FROM event
-				WHERE created_at >= now() - INTERVAL '10 minutes'
+				WHERE timestamp >= now() - INTERVAL '10 minutes'
 				LIMIT {MAX_SAMPLE_ROWS}
 				"""
 			).fetchall()
@@ -74,9 +74,9 @@ def _processing_lag_seconds() -> int:
 				return None
 
 		lags = []
-		for event_id, created_at in rows:
+		for event_id, timestamp in rows:
 			receipt_ms = parse_receipt_ms(event_id)
-			created_dt = ensure_utc(created_at)
+			created_dt = ensure_utc(timestamp)
 			if receipt_ms is None or not created_dt:
 				continue
 

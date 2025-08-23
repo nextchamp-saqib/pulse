@@ -4,6 +4,7 @@ from contextlib import contextmanager
 
 import duckdb
 import frappe
+import pandas as pd
 
 from .logger import get_logger
 
@@ -30,10 +31,10 @@ def _ensure_table(conn):
 	conn.execute(
 		"""
 			CREATE TABLE IF NOT EXISTS event (
-					id TEXT NOT NULL,
-					site TEXT NOT NULL,
-					name TEXT NOT NULL,
-					created_at TIMESTAMP NOT NULL,
+					id TEXT,
+					site TEXT,
+					name TEXT,
+					timestamp TIMESTAMP,
 					app TEXT,
 					app_version TEXT,
 					frappe_version TEXT,
@@ -64,30 +65,27 @@ def store_batch_in_duckdb(batch):
 	try:
 		_ensure_table(conn)
 
-		rows = [
-			(
-				r["id"],
-				r["site"],
-				r["name"],
-				r["app"],
-				r["app_version"],
-				r["frappe_version"],
-				r["created_at"],
-				json.dumps(r.get("data", {})),
-			)
-			for r in batch
-		]
-
-		if not rows:
+		if not batch:
 			return
 
-		insert_sql = """
-			INSERT INTO event (id, site, name, app, app_version, frappe_version, created_at, data)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		"""
+		df = pd.DataFrame(  # noqa: F841
+			[
+				{
+					"id": r.get("id"),
+					"site": r.get("site"),
+					"name": r.get("name"),
+					"timestamp": r.get("timestamp"),
+					"app": r.get("app"),
+					"app_version": r.get("app_version"),
+					"frappe_version": r.get("frappe_version"),
+					"data": json.dumps(r.get("data", {})),
+				}
+				for r in batch
+			]
+		)
 
 		with _transaction(conn):
-			conn.executemany(insert_sql, rows)
+			conn.execute("INSERT INTO event BY NAME SELECT * FROM df")
 	except duckdb.Error as e:
 		logger.error(f"Failed to store event batch in DuckDB: {e!s}")
 		raise

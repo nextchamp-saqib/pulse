@@ -58,6 +58,7 @@ class RedisStream(Document):
 	def conn(self):
 		if not hasattr(self, "_conn"):
 			self._conn = self.connect()
+			self.create_if_not_exists()
 		return self._conn
 
 	@property
@@ -66,7 +67,7 @@ class RedisStream(Document):
 
 	@property
 	def group(self):
-		return "event_processors"
+		return "default"
 
 	@property
 	def consumer(self):
@@ -77,7 +78,6 @@ class RedisStream(Document):
 		raise NotImplementedError
 
 	def load_from_db(self):
-		self.create_if_not_exists()
 		doc = {
 			"name": self.name,
 			"length": self.get_length(),
@@ -223,9 +223,12 @@ class RedisStream(Document):
 		return serialized
 
 	def ack_entries(self, ids):
+		if not ids or not isinstance(ids, list):
+			return
+		if isinstance(ids[0], dict) and "id" in ids[0]:
+			ids = [e["id"] for e in ids]
+
 		try:
-			if not ids:
-				return
 			self.conn.xack(self.key, self.group, *ids)
 		except Exception as e:
 			logger.error(f"Failed to acknowledge entries: {e!s}")
@@ -274,8 +277,8 @@ class RedisStream(Document):
 
 		return [
 			{
+				**decode(entry[1]),
 				"id": decode(entry[0]),
-				"data": decode(entry[1]),
 			}
 			for entry in entries
 		]
@@ -284,3 +287,14 @@ class RedisStream(Document):
 		with suppress(Exception):
 			return result[0][1]
 		return []
+
+	def _warn_if_stream_near_capacity(self):
+		with suppress(Exception):
+			lag = self.get_unacknowledged_length()
+			if lag > 0.8 * STREAM_MAX_LENGTH:
+				logger.warning(
+					f"Redis stream '{self.name}' is nearing capacity. Length: {self.get_length()}, Unacknowledged: {lag}"
+				)
+
+	def move_to_dlq(self, entries):
+		pass
