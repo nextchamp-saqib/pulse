@@ -1,8 +1,9 @@
 import frappe
 from frappe.rate_limiter import rate_limit
 
+from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
+
 from ..constants import API_RATE_LIMIT, API_RATE_LIMIT_SECONDS
-from ..stream import RedisStream
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -12,7 +13,7 @@ def ingest(events):
 	validate_events(events)
 
 	try:
-		stream = RedisStream()
+		stream = RedisStream.get("pulse:events")
 		for event in events:
 			stream.add(event)
 	except Exception:

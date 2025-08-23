@@ -1,0 +1,62 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "prompt",
+ "creation": "2025-08-23 17:02:06.652748",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "consumer_name",
+  "group",
+  "idle",
+  "pending",
+  "group_info"
+ ],
+ "fields": [
+  {
+   "fieldname": "group",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Group"
+  },
+  {
+   "fieldname": "idle",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Idle (seconds)"
+  },
+  {
+   "fieldname": "pending",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Pending"
+  },
+  {
+   "fieldname": "consumer_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Name"
+  },
+  {
+   "fieldname": "group_info",
+   "fieldtype": "JSON",
+   "label": "Group Info"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_virtual": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-08-23 17:16:22.776626",
+ "modified_by": "Administrator",
+ "module": "Pulse",
+ "name": "Redis Stream Consumer",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

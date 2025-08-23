@@ -1,0 +1,86 @@
+{
+ "actions": [],
+ "autoname": "prompt",
+ "creation": "2025-08-23 15:35:14.521459",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "length",
+  "lag",
+  "memory_usage",
+  "entries_per_minute",
+  "column_break_bcsr",
+  "section_break_yufv",
+  "consumers",
+  "entries"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title"
+  },
+  {
+   "fieldname": "memory_usage",
+   "fieldtype": "Data",
+   "label": "Memory Usage"
+  },
+  {
+   "fieldname": "column_break_bcsr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "entries_per_minute",
+   "fieldtype": "Data",
+   "label": "Entries per Minute"
+  },
+  {
+   "fieldname": "entries",
+   "fieldtype": "Table",
+   "label": "Entries",
+   "options": "Redis Stream Entry"
+  },
+  {
+   "fieldname": "consumers",
+   "fieldtype": "Table",
+   "label": "Consumers",
+   "options": "Redis Stream Consumer"
+  },
+  {
+   "fieldname": "section_break_yufv",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "length",
+   "fieldtype": "Int",
+   "label": "Length"
+  },
+  {
+   "fieldname": "lag",
+   "fieldtype": "Data",
+   "label": "Lag"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_virtual": 1,
+ "links": [],
+ "modified": "2025-08-23 17:33:25.952450",
+ "modified_by": "Administrator",
+ "module": "Pulse",
+ "name": "Redis Stream",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,18 +1,19 @@
 import frappe
 
+from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
+
 from .constants import STREAM_MAX_LENGTH
 from .logger import get_logger
 from .storage import store_batch_in_duckdb
-from .stream import RedisStream
 
 logger = get_logger()
 
-READ_COUNT = STREAM_MAX_LENGTH / 2
+READ_COUNT = int(STREAM_MAX_LENGTH / 2)
 
 
 class EventProcessor:
 	def __init__(self):
-		self.stream = RedisStream()
+		self.stream = RedisStream.get("pulse:events")
 
 	def _warn_if_stream_near_capacity(self):
 		try:
@@ -42,7 +43,7 @@ class EventProcessor:
 
 			# Only acknowledge successfully processed events
 			if processed_ids:
-				self.stream.acknowledge_events(processed_ids)
+				self.stream.ack_entries(processed_ids)
 
 			# Log metrics for RQ job monitoring
 			if processed_ids or failed_ids:
@@ -55,7 +56,7 @@ class EventProcessor:
 			return 0  # Return 0 instead of raising to avoid RQ retry
 
 	def _read_events(self):
-		return self.stream.read(count=READ_COUNT, from_consumer_group=True)
+		return self.stream.read(READ_COUNT)
 
 	def _build_batch(self, events):
 		batch = []

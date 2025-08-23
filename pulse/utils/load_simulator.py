@@ -498,7 +498,7 @@ class TelemetrySimulation:
 							live.update(self.dashboard.create_layout())
 						except Exception:
 							pass  # Silently handle dashboard errors
-						await asyncio.sleep(10.0)  # Update every 10 seconds
+						await asyncio.sleep(5.0)  # Update every 10 seconds
 
 				# Create all site simulation tasks
 				site_tasks = [site.simulate() for site in self.sites]
