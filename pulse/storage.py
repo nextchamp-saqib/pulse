@@ -31,9 +31,9 @@ def _ensure_table(conn):
 	conn.execute(
 		"""
 			CREATE TABLE IF NOT EXISTS event (
-					id TEXT,
-					site TEXT,
 					name TEXT,
+					site TEXT,
+					event_name TEXT,
 					timestamp TIMESTAMP,
 					app TEXT,
 					app_version TEXT,
@@ -71,9 +71,9 @@ def store_batch_in_duckdb(batch):
 		df = pd.DataFrame(  # noqa: F841
 			[
 				{
-					"id": r.get("id"),
-					"site": r.get("site"),
 					"name": r.get("name"),
+					"site": r.get("site"),
+					"event_name": r.get("event_name"),
 					"timestamp": r.get("timestamp"),
 					"app": r.get("app"),
 					"app_version": r.get("app_version"),

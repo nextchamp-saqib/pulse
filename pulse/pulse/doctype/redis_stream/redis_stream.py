@@ -14,11 +14,13 @@ from frappe.utils.background_jobs import get_redis_conn
 from pulse.constants import (
 	PENDING_MIN_IDLE_MS,
 	STREAM_MAX_LENGTH,
+	STREAM_NAME,
 )
 from pulse.logger import get_logger
 from pulse.utils import decode, pretty_bytes
 
 logger = get_logger()
+
 
 
 class RedisStream(Document):
@@ -43,22 +45,18 @@ class RedisStream(Document):
 	# end: auto-generated types
 
 	@classmethod
-	def init(cls, name) -> "RedisStream":
-		name = getattr(frappe.flags, "test_stream_name", name)
+	def init(cls, name=None) -> "RedisStream":
+		name = frappe.flags.test_stream_name or name or STREAM_NAME
 		return RedisStream(
 			doctype="Redis Stream",
 			name=name,
 		)
 
-	@classmethod
-	def connect(cls):
-		# using redis queue connection as it has some level of persistence
-		return get_redis_conn()
-
 	@property
 	def conn(self):
 		if not hasattr(self, "_conn"):
-			self._conn = self.connect()
+			# using redis queue connection as it has some level of persistence
+			self._conn = get_redis_conn()
 			self.create_if_not_exists()
 		return self._conn
 
@@ -171,13 +169,7 @@ class RedisStream(Document):
 		with suppress(Exception):
 			entries = []
 			for e in self.conn.xrevrange(self.key, count=count) or []:
-				entry = decode(e)
-				entries.append(
-					{
-						"id": entry[0],
-						"data": frappe.as_json(entry[1], indent=4),
-					}
-				)
+				entries.append(self._normalize_entry(e))
 			return entries
 
 	def db_update(self):
@@ -189,7 +181,7 @@ class RedisStream(Document):
 
 	@staticmethod
 	def get_list(filters=None, page_length=20, **kwargs):
-		conn = RedisStream.connect()
+		conn = get_redis_conn()
 		pattern = f"{frappe.local.site}:*"
 		streams = []
 
@@ -276,18 +268,25 @@ class RedisStream(Document):
 		except Exception as e:
 			logger.error(f"Failed to read entries: {e!s}")
 
-		return [
-			{
-				**decode(entry[1]),
-				"id": decode(entry[0]),
-			}
-			for entry in entries
-		]
+		return [self._normalize_entry(entry) for entry in entries]
 
 	def _extract_entries(self, result):
 		with suppress(Exception):
 			return result[0][1]
 		return []
+
+	def _normalize_entry(self, entry):
+		return {
+			"id": decode(entry[0]),
+			"data": decode(entry[1]),
+		}
+
+	def get_entry(self, entry_id):
+		with suppress(Exception):
+			result = self.conn.xrange(self.key, min=entry_id, max=entry_id)
+			if result:
+				return self._normalize_entry(result[0])
+		return None
 
 	def _warn_if_stream_near_capacity(self):
 		with suppress(Exception):

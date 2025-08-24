@@ -1,5 +1,6 @@
 import frappe
 
+from pulse.pulse.doctype.pulse_event.pulse_event import PulseEvent
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
 
 from .constants import STREAM_MAX_LENGTH
@@ -12,55 +13,38 @@ READ_COUNT = int(STREAM_MAX_LENGTH / 2)
 
 
 def process_events():
-	stream = RedisStream.init("pulse:events")
-	events = stream.read(READ_COUNT)
+	stream = RedisStream.init()
+	entries = stream.read(READ_COUNT)
+	events = [PulseEvent._from_stream_entry(entry) for entry in entries]
 	accepted, discarded = sanitize_events(events)
 
+	failed = []
 	try:
 		store_batch_in_duckdb(accepted)
 	except Exception as e:
 		logger.error(f"Error storing events: {e!s}")
-		stream.move_to_dlq(accepted)
+		failed.extend(accepted)
+		stream.move_to_dlq(failed)
 
 	# ack all events because
 	# accepted ones have been stored or moved to DLQ
 	# discarded ones should never to be processed
-	stream.ack_entries(events)
-	logger.info(f"Processed {len(accepted)} events successfully. Discarded {len(discarded)} events.")
+	stream.ack_entries(entries)
+	logger.info(
+		f"Processed {len(accepted)} events. Discarded {len(discarded)} events. Failed {len(failed)} events."
+	)
 
 
 def sanitize_events(events):
 	sanitized = []
 	discarded = []
 	for event in events:
-		if not isinstance(event, dict):
-			logger.debug(f"Skipping event with invalid data format: {event}")
-			discarded.append(event)
-			continue
-
-		reqd_fields = ["id", "site", "name", "timestamp"]
+		reqd_fields = ["name", "site", "event_name", "timestamp"]
 		missing = [field for field in reqd_fields if not event.get(field)]
 		if missing:
 			logger.debug(f"Skipping event with missing required fields: {missing}")
 			discarded.append(event)
 			continue
-
-		table_fields = [
-			"id",
-			"site",
-			"name",
-			"app",
-			"app_version",
-			"frappe_version",
-			"timestamp",
-		]
-
-		sanitized_event = {}
-		for field in table_fields:
-			sanitized_event[field] = event.get(field)
-
-		# Move all extra fields into the data dictionary
-		sanitized_event["data"] = {k: v for k, v in event.items() if k not in table_fields}
-		sanitized.append(sanitized_event)
+		sanitized.append(event)
 
 	return sanitized, discarded

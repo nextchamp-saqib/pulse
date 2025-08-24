@@ -75,7 +75,7 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 		test_events = [
 			{
 				"site": frappe.local.site,
-				"name": "user_login",
+				"event_name": "user_login",
 				"timestamp": datetime.now(timezone.utc).isoformat(),
 				"app": "frappe",
 				"app_version": "14.0.0",
@@ -86,7 +86,7 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 			},
 			{
 				"site": frappe.local.site,
-				"name": "page_view",
+				"event_name": "page_view",
 				"timestamp": datetime.now(timezone.utc).isoformat(),
 				"app": "frappe",
 				"app_version": "14.0.0",
@@ -97,7 +97,7 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 			},
 			{
 				"site": frappe.local.site,
-				"name": "document_create",
+				"event_name": "document_create",
 				"timestamp": datetime.now(timezone.utc).isoformat(),
 				"app": "frappe",
 				"app_version": "14.0.0",
@@ -138,8 +138,8 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 
 			# Verify first event structure and data
 			first_event = dict(zip([desc[0] for desc in conn.description], events[0], strict=True))
-			self.assertIsNotNone(first_event["id"], "Event should have an auto-generated ID")
-			self.assertEqual(first_event["name"], "user_login")
+			self.assertIsNotNone(first_event["name"], "Event should have an auto-generated ID")
+			self.assertEqual(first_event["event_name"], "user_login")
 			self.assertEqual(first_event["site"], frappe.local.site)
 
 			# Verify JSON data field contains extra attributes
@@ -161,7 +161,7 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 		test_events = [
 			{
 				"site": frappe.local.site,
-				"name": "api_test_event",
+				"event_name": "api_test_event",
 				"timestamp": datetime.now(timezone.utc).isoformat(),
 			}
 		]
@@ -194,14 +194,14 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 			# Valid event
 			{
 				"site": frappe.local.site,
-				"name": "valid_event",
+				"event_name": "valid_event",
 				"timestamp": datetime.now(timezone.utc).isoformat(),
 				"extra_field": "should_go_to_data",
 			},
 			# Missing required field (should be discarded)
 			{
 				"site": frappe.local.site,
-				# missing 'name' field
+				# missing 'event_name' field
 				"timestamp": datetime.now(timezone.utc).isoformat(),
 			},
 			# Invalid data format (should be discarded)
@@ -209,7 +209,7 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 			# Valid event with minimal fields
 			{
 				"site": frappe.local.site,
-				"name": "minimal_event",
+				"event_name": "minimal_event",
 				"timestamp": datetime.now(timezone.utc).isoformat(),
 			},
 		]
@@ -235,7 +235,7 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 
 			# Check that extra fields are moved to data JSON
 			first_event = dict(zip([desc[0] for desc in conn.description], events[0], strict=True))
-			if first_event["name"] == "valid_event":
+			if first_event["event_name"] == "valid_event":
 				data = json.loads(first_event["data"])
 				self.assertEqual(data["extra_field"], "should_go_to_data")
 
@@ -248,7 +248,7 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 		test_batch = [
 			{
 				"site": frappe.local.site,
-				"name": "storage_test",
+				"event_name": "storage_test",
 				"timestamp": datetime.now(timezone.utc).isoformat(),
 				"app": "test_app",
 				"app_version": "1.0.0",
@@ -263,7 +263,7 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 		# Verify storage
 		conn = _get_db()
 		try:
-			result = conn.execute("SELECT COUNT(*) FROM event WHERE name = 'storage_test'").fetchone()
+			result = conn.execute("SELECT COUNT(*) FROM event WHERE event_name = 'storage_test'").fetchone()
 			self.assertEqual(result[0], 1, "Event should be stored directly")
 		finally:
 			conn.close()
@@ -274,7 +274,7 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 		# Test with invalid database path (should handle gracefully)
 		with patch("pulse.storage._get_db_path", return_value="/invalid/path/pulse.duckdb"):
 			try:
-				store_batch_in_duckdb([{"site": "test", "name": "test", "timestamp": "2023-01-01"}])
+				store_batch_in_duckdb([{"site": "test", "event_name": "test", "timestamp": "2023-01-01"}])
 				# Should not reach here if error handling works
 				self.fail("Should have raised an exception for invalid path")
 			except Exception:
@@ -282,7 +282,7 @@ class TestPulseCompleteCycle(IntegrationTestCase):
 				pass
 
 		# Test Redis Stream with connection issues
-		with patch.object(RedisStream, "connect", side_effect=Exception("Redis connection failed")):
+		with patch.object(RedisStream, "conn", side_effect=Exception("Redis connection failed")):
 			stream = RedisStream.init("test:stream")
 			# Should handle connection errors gracefully
 			events = stream.read(10)

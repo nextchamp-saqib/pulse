@@ -1,24 +1,43 @@
 import frappe
 from frappe.rate_limiter import rate_limit
 
-from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
+from pulse.logger import get_logger
 
 from ..constants import API_RATE_LIMIT, API_RATE_LIMIT_SECONDS
+
+logger = get_logger()
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=API_RATE_LIMIT, seconds=API_RATE_LIMIT_SECONDS)
 def ingest(events):
 	check_auth()
-	validate_events(events)
 
-	try:
-		stream = RedisStream.init("pulse:events")
-		for event in events:
-			stream.add(event)
-	except Exception:
-		frappe.log_error(title="Failed to track events")
-		raise
+	failures = []
+	for event in events:
+		try:
+			doc = frappe.new_doc("Pulse Event")
+			doc.update(event)
+			doc.data = {
+				k: v
+				for k, v in event.items()
+				if k
+				not in [
+					"event_name",
+					"site",
+					"timestamp",
+					"app",
+					"app_version",
+					"frappe_version",
+				]
+			}
+			doc.db_insert()
+		except Exception as e:
+			logger.error(f"Failed to insert event: {event}, Error: {e}")
+			failures.append(event)
+
+	if failures:
+		frappe.throw(f"{len(failures)} events failed to insert. Check logs for details.")
 
 
 def check_auth():

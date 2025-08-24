@@ -1,3 +1,5 @@
+STREAM_NAME = "pulse:events"
+
 LOGGER_NAME = "pulse"
 
 # API limits
