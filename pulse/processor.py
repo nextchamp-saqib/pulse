@@ -11,12 +11,8 @@ logger = get_logger()
 READ_COUNT = int(STREAM_MAX_LENGTH / 2)
 
 
-def process_events(stream_name=None):
-	# Use provided stream name, frappe.flags test stream name, or default to production stream
-	if not stream_name:
-		stream_name = getattr(frappe.flags, "test_stream_name", "pulse:events")
-
-	stream = RedisStream.init(stream_name)
+def process_events():
+	stream = RedisStream.init("pulse:events")
 	events = stream.read(READ_COUNT)
 	accepted, discarded = sanitize_events(events)
 

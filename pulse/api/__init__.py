@@ -13,9 +13,7 @@ def ingest(events):
 	validate_events(events)
 
 	try:
-		# Use test stream name if provided in frappe.flags (for testing)
-		stream_name = getattr(frappe.flags, "test_stream_name", "pulse:events")
-		stream = RedisStream.init(stream_name)
+		stream = RedisStream.init("pulse:events")
 		for event in events:
 			stream.add(event)
 	except Exception:

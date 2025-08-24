@@ -44,6 +44,7 @@ class RedisStream(Document):
 
 	@classmethod
 	def init(cls, name) -> "RedisStream":
+		name = getattr(frappe.flags, "test_stream_name", name)
 		return RedisStream(
 			doctype="Redis Stream",
 			name=name,
