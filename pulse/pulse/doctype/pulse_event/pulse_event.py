@@ -3,9 +3,10 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import now
+from frappe.utils.data import make_filter_dict
 from frappe.utils.logger import get_logger
 
-from pulse.constants import STREAM_NAME
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
 
 logger = get_logger()
@@ -62,21 +63,9 @@ class PulseEvent(Document):
 				"app_version": self.get("app_version"),
 				"frappe_version": self.get("frappe_version"),
 				"data": self.get("data"),
+				"creation": now()
 			}
 		)
-
-	@classmethod
-	def bulk_insert(cls, events):
-		failures = []
-		for event in events:
-			try:
-				instance = cls(**event)
-				instance.db_insert()
-			except Exception:
-				logger.error(f"Failed to insert event: {event}")
-				failures.append(event)
-
-		return failures
 
 	def load_from_db(self):
 		entry = self.stream.get_entry(self.name)
@@ -95,6 +84,7 @@ class PulseEvent(Document):
 			"app_version": data.get("app_version"),
 			"frappe_version": data.get("frappe_version"),
 			"data": data.get("data"),
+			"creation": data.get("creation")
 		}
 
 	def db_update(self):
@@ -104,15 +94,44 @@ class PulseEvent(Document):
 		self.stream.delete(self.name)
 
 	@staticmethod
-	def get_list(filters=None, page_length=20, **kwargs):
-		stream = _get_event_stream()
-		entries = stream.get_entries(page_length)
-		events = []
-		for entry in entries:
-			event = PulseEvent._from_stream_entry(entry)
-			events.append(event)
+	def get_list(filters=None, order_by=None, page_length=None, limit_page_length=None, **kwargs):
+		filters = filters or {}
+		if isinstance(filters, list):
+			filters = make_filter_dict(filters)
 
-		return events
+		min_id = None
+		max_id = None
+		name_filter = filters.get("name")
+		name_filter_op = None
+		name_filter_val = None
+		if isinstance(name_filter, list | tuple) and len(name_filter) == 2:
+			name_filter_op = name_filter[0]
+			name_filter_val = name_filter[1]
+		elif isinstance(name_filter, str | int):
+			name_filter_op = "="
+			name_filter_val = name_filter
+
+		if name_filter_op and name_filter_val:
+			if name_filter_op == "=":
+				min_id = name_filter_val
+				max_id = name_filter_val
+			elif name_filter_op in (">", ">="):
+				min_id = name_filter_val
+				max_id = None
+			elif name_filter_op in ("<", "<="):
+				min_id = None
+				max_id = name_filter_val
+			else:
+				min_id = None
+				max_id = None
+
+		order_by = order_by.lower()
+		order = "asc" if "asc" in order_by else "desc"
+
+		stream = _get_event_stream()
+		count = page_length or limit_page_length
+		entries = stream.get_entries(min_id=min_id, max_id=max_id, count=count, order=order)
+		return [PulseEvent._from_stream_entry(entry) for entry in entries]
 
 	@staticmethod
 	def get_count(filters=None, **kwargs):

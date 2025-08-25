@@ -22,7 +22,6 @@ from pulse.utils import decode, pretty_bytes
 logger = get_logger()
 
 
-
 class RedisStream(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -165,12 +164,17 @@ class RedisStream(Document):
 						consumers.append(consumer)
 			return consumers
 
-	def get_entries(self, count=10):
+	def get_entries(self, min_id=None, max_id=None, count=10, order="desc"):
+		entries = []
 		with suppress(Exception):
-			entries = []
-			for e in self.conn.xrevrange(self.key, count=count) or []:
-				entries.append(self._normalize_entry(e))
-			return entries
+			min_id = min_id or "-"
+			max_id = max_id or "+"
+			if order == "desc":
+				entries = self.conn.xrevrange(self.key, min=min_id, max=max_id, count=count) or []
+			else:
+				entries = self.conn.xrange(self.key, min=min_id, max=max_id, count=count) or []
+			entries = [self._normalize_entry(e) for e in entries]
+		return entries
 
 	def db_update(self):
 		raise NotImplementedError
