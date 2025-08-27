@@ -6,13 +6,12 @@
  "engine": "InnoDB",
  "field_order": [
   "event_name",
-  "site",
-  "timestamp",
-  "app",
-  "app_version",
-  "frappe_version",
+  "subject_id",
+  "subject_type",
+  "captured_at",
+  "received_at",
   "column_break_swwj",
-  "data"
+  "props"
  ],
  "fields": [
   {
@@ -22,47 +21,42 @@
    "label": "Event Name"
   },
   {
-   "fieldname": "site",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Site"
-  },
-  {
-   "fieldname": "timestamp",
-   "fieldtype": "Datetime",
-   "in_list_view": 1,
-   "label": "Timestamp"
-  },
-  {
-   "fieldname": "app",
-   "fieldtype": "Data",
-   "label": "App"
-  },
-  {
-   "fieldname": "app_version",
-   "fieldtype": "Data",
-   "label": "App Version"
-  },
-  {
-   "fieldname": "frappe_version",
-   "fieldtype": "Data",
-   "label": "Frappe Version"
-  },
-  {
    "fieldname": "column_break_swwj",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "data",
+   "fieldname": "subject_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Subject ID"
+  },
+  {
+   "fieldname": "subject_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Subject Type"
+  },
+  {
+   "fieldname": "captured_at",
+   "fieldtype": "Datetime",
+   "label": "Captured At"
+  },
+  {
+   "fieldname": "received_at",
+   "fieldtype": "Datetime",
+   "label": "Received At"
+  },
+  {
+   "fieldname": "props",
    "fieldtype": "JSON",
-   "label": "Data"
+   "label": "Props"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_virtual": 1,
  "links": [],
- "modified": "2025-08-24 16:06:32.309385",
+ "modified": "2025-08-27 21:06:01.286021",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Pulse Event",

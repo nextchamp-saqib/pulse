@@ -10,34 +10,42 @@ logger = get_logger()
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=API_RATE_LIMIT, seconds=API_RATE_LIMIT_SECONDS)
-def ingest(events):
+def ingest(event_name, subject_id, subject_type, captured_at, props=None):
 	check_auth()
 
-	failures = []
+	try:
+		doc = frappe.new_doc("Pulse Event")
+		doc.event_name = event_name
+		doc.subject_id = subject_id
+		doc.subject_type = subject_type
+		doc.captured_at = captured_at
+		doc.props = props or {}
+		doc.validate()
+		doc.db_insert()
+	except Exception as e:
+		logger.error(f"Failed to insert event: {event_name}, Error: {e}")
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=API_RATE_LIMIT, seconds=API_RATE_LIMIT_SECONDS)
+def bulk_ingest(events):
+	check_auth()
+
+	if not isinstance(events, list):
+		frappe.throw("Events must be a list", frappe.ValidationError)
+
 	for event in events:
 		try:
 			doc = frappe.new_doc("Pulse Event")
-			doc.update(event)
-			doc.data = {
-				k: v
-				for k, v in event.items()
-				if k
-				not in [
-					"event_name",
-					"site",
-					"timestamp",
-					"app",
-					"app_version",
-					"frappe_version",
-				]
-			}
+			doc.event_name = event.get("event_name")
+			doc.subject_id = event.get("subject_id")
+			doc.subject_type = event.get("subject_type")
+			doc.captured_at = event.get("captured_at")
+			doc.props = event.get("props") or {}
+			doc.validate()
 			doc.db_insert()
 		except Exception as e:
 			logger.error(f"Failed to insert event: {event}, Error: {e}")
-			failures.append(event)
-
-	if failures:
-		frappe.throw(f"{len(failures)} events failed to insert. Check logs for details.")
 
 
 def check_auth():
@@ -58,11 +66,3 @@ def check_auth():
 	# validate token
 	if token != api_key:
 		frappe.throw("Invalid Authorization token", frappe.PermissionError)
-
-
-def validate_events(events):
-	required = ("site", "name", "timestamp")
-	for event in events:
-		invalid = [k for k in required if not event.get(k)]
-		if invalid:
-			frappe.throw(f"Event failed validation. Missing/empty: {invalid}")

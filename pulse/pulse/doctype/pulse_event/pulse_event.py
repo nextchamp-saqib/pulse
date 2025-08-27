@@ -5,6 +5,7 @@ from datetime import datetime
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import now_datetime
 from frappe.utils.logger import get_logger
 
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
@@ -23,6 +24,10 @@ def _get_event_stream():
 	return _EVENT_STREAM
 
 
+
+REQD_FIELDS = ["event_name", "captured_at", "subject_id", "subject_type"]
+
+
 class PulseEvent(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -32,13 +37,12 @@ class PulseEvent(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		app: DF.Data | None
-		app_version: DF.Data | None
-		data: DF.JSON | None
+		captured_at: DF.Datetime | None
 		event_name: DF.Data | None
-		frappe_version: DF.Data | None
-		site: DF.Data | None
-		timestamp: DF.Datetime | None
+		props: DF.JSON | None
+		received_at: DF.Datetime | None
+		subject_id: DF.Data | None
+		subject_type: DF.Data | None
 	# end: auto-generated types
 
 	@property
@@ -46,8 +50,7 @@ class PulseEvent(Document):
 		return _get_event_stream()
 
 	def validate(self):
-		reqd = ["event_name", "site", "timestamp"]
-		missing = [field for field in reqd if not getattr(self, field)]
+		missing = [field for field in REQD_FIELDS if not getattr(self, field)]
 
 		if missing:
 			frappe.throw(f"Missing required fields: {', '.join(missing)}")
@@ -57,12 +60,11 @@ class PulseEvent(Document):
 		self.stream.add(
 			{
 				"event_name": self.get("event_name"),
-				"site": self.get("site"),
-				"timestamp": self.get("timestamp"),
-				"app": self.get("app"),
-				"app_version": self.get("app_version"),
-				"frappe_version": self.get("frappe_version"),
-				"data": self.get("data"),
+				"subject_id": self.get("subject_id"),
+				"subject_type": self.get("subject_type"),
+				"captured_at": self.get("captured_at"),
+				"received_at": now_datetime(),
+				"props": self.get("props") or {},
 			}
 		)
 
@@ -80,13 +82,12 @@ class PulseEvent(Document):
 
 		return {
 			"name": entry.get("id"),
-			"event_name": data.get("name") or data.get("event_name"),
-			"site": data.get("site"),
-			"timestamp": data.get("timestamp"),
-			"app": data.get("app"),
-			"app_version": data.get("app_version"),
-			"frappe_version": data.get("frappe_version"),
-			"data": data.get("data"),
+			"event_name": data.get("event_name"),
+			"subject_id": data.get("subject_id"),
+			"subject_type": data.get("subject_type"),
+			"captured_at": data.get("captured_at"),
+			"received_at": data.get("received_at"),
+			"props": data.get("props"),
 			"creation": creation,
 			"modified": creation,
 		}
