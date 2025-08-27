@@ -1,3 +1,7 @@
+import frappe
+from frappe.model.utils import is_virtual_doctype
+
+
 def decode(data):
 	if isinstance(data, bytes):
 		return data.decode("utf-8")
@@ -20,3 +24,27 @@ def pretty_bytes(size):
 		return f"{size / (1024**2):.2f} MB"
 	else:
 		return f"{size / (1024**3):.2f} GB"
+
+
+def get_etl_batch(doctype, checkpoint=None, batch_size=1000):
+	if is_virtual_doctype(doctype):
+		from frappe.model.base_document import get_controller
+
+		controller = get_controller(doctype)
+		if not hasattr(controller, "get_etl_batch"):
+			raise NotImplementedError
+
+		return frappe.call(controller.get_etl_batch, checkpoint=checkpoint, batch_size=batch_size)
+
+	creation_key, id_key = "creation", "name"
+	filters = None
+	if checkpoint:
+		filters = [[creation_key, ">", checkpoint]]
+
+	return frappe.get_all(
+		doctype,
+		fields=["*"],
+		filters=filters,
+		limit=batch_size,
+		order_by=f"{creation_key}, {id_key}",
+	)

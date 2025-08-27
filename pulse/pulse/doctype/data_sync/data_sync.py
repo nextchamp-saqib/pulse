@@ -15,6 +15,7 @@ from frappe.utils.synchronization import filelock
 from ibis.backends.duckdb import Backend as DuckDBBackend
 
 from pulse.logger import get_logger
+from pulse.utils import get_etl_batch
 
 _logger = get_logger()
 
@@ -30,10 +31,10 @@ class DataSync(Document):
 
 		batch_size: DF.Int
 		checkpoint: DF.Data | None
+		creation_key: DF.Data | None
 		ended_at: DF.Datetime | None
 		log: DF.LongText | None
 		name: DF.Int | None
-		order_key: DF.Data | None
 		primary_key: DF.Data | None
 		reference_doctype: DF.Link | None
 		started_at: DF.Datetime | None
@@ -61,18 +62,19 @@ class DataSync(Document):
 		self.set_value("log", self.log)
 
 	def before_save(self):
-		self.order_key = self.order_key or "creation"
+		self.creation_key = self.creation_key or "creation"
 		self.primary_key = self.primary_key or "name"
 		self.total_inserted = 0
 		self.batch_size = 1000
 		self.table_name = get_table_name(self.reference_doctype)
+		self.calculate_batch_size()
 
 	def should_sync(self):
 		if self.status in ("Completed"):
 			frappe.msgprint(f"Sync already {self.status.lower()}, skipping.")
 			return False
 
-		if not frappe.get_list(self.reference_doctype, limit=1, pluck=True):
+		if not get_etl_batch(self.reference_doctype, batch_size=1):
 			self.set_value("status", "Skipped")
 			self.log_msg(f"No records found in {self.reference_doctype}, skipping sync.")
 			return False
@@ -89,8 +91,7 @@ class DataSync(Document):
 		self.set_value("status", "In Progress")
 		self.connect_to_warehouse()
 		self.ensure_warehouse_table()
-		self.calculate_batch_size()
-		self.set_checkpoint()
+		self.fetch_checkpoint()
 
 		lock_name = f"duckdb_sync:{self.table_name}"
 		lock_timeout = 60
@@ -98,12 +99,18 @@ class DataSync(Document):
 		try:
 			with filelock(lock_name, timeout=lock_timeout):
 				while True:
-					batch = self.get_next_batch()
+					batch = get_etl_batch(
+						self.reference_doctype,
+						checkpoint=self.checkpoint,
+						batch_size=self.batch_size,
+					)
 					if not batch:
 						self.log_msg(f"No new data to insert after {self.checkpoint}")
 						break
-					self.insert_batch(batch)
-					if len(batch) < self.batch_size:
+
+					df = pd.DataFrame.from_records(batch)
+					self.insert_batch(df)
+					if df.shape[0] < self.batch_size:
 						break
 					time.sleep(0.01)
 				self.set_value("ended_at", frappe.utils.now_datetime())
@@ -142,12 +149,12 @@ class DataSync(Document):
 		# 	frappe.throw("Schema mismatch")
 
 	def get_schema_from_meta(self):
-		row = frappe.get_all(self.reference_doctype, fields=["*"], limit=1)
-		df = pd.DataFrame.from_records(row).fillna("")
+		rows = get_etl_batch(self.reference_doctype, batch_size=1)
+		df = pd.DataFrame.from_records(rows).fillna("")
 		return ibis.memtable(df).schema()
 
 	def calculate_batch_size(self, default_mb: int = 256) -> int:
-		sample = frappe.get_all(self.reference_doctype, fields=["*"], limit=10)
+		sample = get_etl_batch(self.reference_doctype, batch_size=10)
 		df = pd.DataFrame.from_records(sample)
 		if df.empty:
 			return
@@ -160,26 +167,10 @@ class DataSync(Document):
 		self.batch_size = int(default_mb / row_size_mb) or 1000
 		self.set_value("batch_size", self.batch_size)
 
-	def set_checkpoint(self):
-		if last_sync := self.get_last_sync_doc():
-			self.set_value("checkpoint", last_sync.checkpoint)
-			return
-
-		first_record = frappe.get_all(
-			self.reference_doctype,
-			fields=[self.order_key],
-			order_by=f"{self.order_key} asc",
-			limit=1,
-		)
-		if not first_record:
-			return None
-
-		checkpoint = first_record[0][self.order_key]
-		self.set_value("checkpoint", checkpoint)
-
-	def get_last_sync_doc(self):
-		with suppress(Exception):
-			return frappe.get_last_doc(
+	def fetch_checkpoint(self):
+		checkpoint = None
+		with suppress(frappe.DoesNotExistError):
+			last_sync = frappe.get_last_doc(
 				"Data Sync",
 				{
 					"reference_doctype": self.reference_doctype,
@@ -187,21 +178,10 @@ class DataSync(Document):
 				},
 				order_by="ended_at desc",
 			)
+			checkpoint = last_sync.checkpoint
+		self.set_value("checkpoint", checkpoint)
 
-	def get_next_batch(self):
-		filters = {}
-		if self.checkpoint:
-			filters[self.order_key] = [">", self.checkpoint]
-		return frappe.get_all(
-			self.reference_doctype,
-			fields=["*"],
-			filters=filters,
-			order_by=f"{self.order_key} asc, {self.primary_key} asc",
-			limit=self.batch_size,
-		)
-
-	def insert_batch(self, batch) -> int:
-		df = pd.DataFrame.from_records(batch)
+	def insert_batch(self, df) -> int:
 		source = ibis.memtable(df)
 		target = self.warehouse_conn.table(self.table_name)
 
@@ -215,7 +195,7 @@ class DataSync(Document):
 		if insert_count > 0:
 			self.warehouse_conn.insert(self.table_name, diff)
 
-		self.checkpoint = df[self.order_key].max()
+		self.checkpoint = df[self.creation_key].max()
 		self.set_value("checkpoint", self.checkpoint)
 
 		self.log_msg(

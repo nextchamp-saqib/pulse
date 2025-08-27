@@ -1,10 +1,10 @@
 # Copyright (c) 2025, hello@frappe.io and contributors
 # For license information, please see license.txt
 
+from datetime import datetime
+
 import frappe
 from frappe.model.document import Document
-from frappe.utils import now
-from frappe.utils.data import make_filter_dict
 from frappe.utils.logger import get_logger
 
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
@@ -63,7 +63,6 @@ class PulseEvent(Document):
 				"app_version": self.get("app_version"),
 				"frappe_version": self.get("frappe_version"),
 				"data": self.get("data"),
-				"creation": now()
 			}
 		)
 
@@ -75,6 +74,10 @@ class PulseEvent(Document):
 	@staticmethod
 	def _from_stream_entry(entry):
 		data = entry.get("data", {})
+		timestamp_ms = int(entry.get("id").split("-")[0])
+		timestamp_s = timestamp_ms / 1000
+		creation = datetime.fromtimestamp(timestamp_s)
+
 		return {
 			"name": entry.get("id"),
 			"event_name": data.get("name") or data.get("event_name"),
@@ -84,7 +87,8 @@ class PulseEvent(Document):
 			"app_version": data.get("app_version"),
 			"frappe_version": data.get("frappe_version"),
 			"data": data.get("data"),
-			"creation": data.get("creation")
+			"creation": creation,
+			"modified": creation,
 		}
 
 	def db_update(self):
@@ -94,44 +98,17 @@ class PulseEvent(Document):
 		self.stream.delete(self.name)
 
 	@staticmethod
-	def get_list(filters=None, order_by=None, page_length=None, limit_page_length=None, **kwargs):
-		filters = filters or {}
-		if isinstance(filters, list):
-			filters = make_filter_dict(filters)
-
-		min_id = None
-		max_id = None
-		name_filter = filters.get("name")
-		name_filter_op = None
-		name_filter_val = None
-		if isinstance(name_filter, list | tuple) and len(name_filter) == 2:
-			name_filter_op = name_filter[0]
-			name_filter_val = name_filter[1]
-		elif isinstance(name_filter, str | int):
-			name_filter_op = "="
-			name_filter_val = name_filter
-
-		if name_filter_op and name_filter_val:
-			if name_filter_op == "=":
-				min_id = name_filter_val
-				max_id = name_filter_val
-			elif name_filter_op in (">", ">="):
-				min_id = name_filter_val
-				max_id = None
-			elif name_filter_op in ("<", "<="):
-				min_id = None
-				max_id = name_filter_val
-			else:
-				min_id = None
-				max_id = None
-
-		order_by = order_by.lower()
-		order = "asc" if "asc" in order_by else "desc"
-
+	def get_list(filters=None, page_length=None, **kwargs):
 		stream = _get_event_stream()
-		count = page_length or limit_page_length
-		entries = stream.get_entries(min_id=min_id, max_id=max_id, count=count, order=order)
+		entries = stream.get_entries(page_length)
 		return [PulseEvent._from_stream_entry(entry) for entry in entries]
+
+	@staticmethod
+	def get_etl_batch(checkpoint=None, batch_size=1000):
+		stream = _get_event_stream()
+		entries = stream.get_entries(min_id=checkpoint, count=batch_size, order="asc")
+		events = (PulseEvent._from_stream_entry(entry) for entry in entries)
+		return events
 
 	@staticmethod
 	def get_count(filters=None, **kwargs):
