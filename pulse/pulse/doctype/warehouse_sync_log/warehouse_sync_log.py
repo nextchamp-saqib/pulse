@@ -56,20 +56,33 @@ class WarehouseSyncLog(Document):
 		self.total_inserted = 0
 		self.batch_size = self.batch_size or 1000
 
-	def _load_job(self) -> WarehouseSyncJob:
-		return frappe.get_doc("Warehouse Sync Job", self.job)
+	@property
+	def _config(self):
+		if not hasattr(self, "_job_instance"):
+			self._job_instance = frappe.get_doc("Warehouse Sync Job", self.job)
+		return self._job_instance
+
+	def should_sync(self) -> bool:
+		if not self._config.enabled:
+			self.log_msg("Job is disabled")
+			return False
+
+		new_rows = get_etl_batch(self._config.reference_doctype, self._config.checkpoint, batch_size=1)
+		if not new_rows:
+			self.log_msg("No new rows to sync")
+			return False
+
+		return True
 
 	@frappe.whitelist()
 	def sync(self):
-		job = self._load_job()
-		if not job.enabled:
+		if not self.should_sync():
 			self.set_value("status", "Skipped")
-			self.log_msg("Job is disabled, skipping.")
 			return
 
 		# compute batch size using row_size if available (target ~256MB)
-		if getattr(job, "row_size", None):
-			self.batch_size = max(int((256 * 1024 * 1024) / max(job.row_size, 1)), 1)
+		if self._config.row_size:
+			self.batch_size = max(int((256 * 1024 * 1024) / max(self._config.row_size, 1)), 1)
 			self.set_value("batch_size", self.batch_size)
 
 		self.set_value("log", None)
@@ -77,14 +90,14 @@ class WarehouseSyncLog(Document):
 		self.set_value("status", "In Progress")
 
 		# ensure warehouse table exists before starting
-		created = job.ensure_warehouse_table()
+		created = self._config.ensure_warehouse_table()
 		if created:
-			self.log_msg(f"Created table {job.table_name} in warehouse.")
+			self.log_msg(f"Created table {self._config.table_name} in warehouse.")
 
-		checkpoint = job.checkpoint
+		checkpoint = self._config.checkpoint
 		self.set_value("status", "In Progress")
 
-		lock_name = f"duckdb_sync:{job.table_name}"
+		lock_name = f"duckdb_sync:{self._config.table_name}"
 		lock_timeout = 60
 
 		try:
@@ -92,7 +105,7 @@ class WarehouseSyncLog(Document):
 				conn = get_warehouse_connection()
 				while True:
 					batch = get_etl_batch(
-						job.reference_doctype,
+						self._config.reference_doctype,
 						checkpoint=checkpoint,
 						batch_size=self.batch_size,
 					)
@@ -101,7 +114,7 @@ class WarehouseSyncLog(Document):
 						break
 
 					df = pd.DataFrame.from_records(batch)
-					inserted, checkpoint = self._insert_batch(conn, job, df)
+					inserted, checkpoint = self._insert_batch(conn, self._config, df)
 					if df.shape[0] < self.batch_size:
 						break
 					time.sleep(0.01)
@@ -111,12 +124,12 @@ class WarehouseSyncLog(Document):
 		except LockTimeoutError:
 			self.set_value("status", "Skipped")
 			self.log_msg(
-				f"Failed to acquire lock for {job.reference_doctype}, another sync already running."
+				f"Failed to acquire lock for {self._config.reference_doctype}, another sync already running."
 			)
 
 		except Exception as e:
 			_logger.error(
-				f"Error occurred while synchronizing {job.reference_doctype} to warehouse: {e}"
+				f"Error occurred while synchronizing {self._config.reference_doctype} to warehouse: {e}"
 			)
 			self.set_value("status", "Failed")
 			self.log_msg(f"Error occurred: {e}")

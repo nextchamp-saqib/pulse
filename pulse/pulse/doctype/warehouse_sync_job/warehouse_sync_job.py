@@ -103,3 +103,15 @@ def get_warehouse_connection() -> DuckDBBackend:
 	conn.attach(f"ducklake:{db_path}", "warehouse")
 	conn.raw_sql("USE warehouse;")
 	return conn
+
+
+def sync_warehouse():
+	if not frappe.db.exists("Warehouse Sync Job", {"enabled": 1}):
+		return
+
+	for job in frappe.get_all("Warehouse Sync Job", filters={"enabled": 1}):
+		log = frappe.new_doc("Warehouse Sync Log")
+		log.job = job.name
+		if log.should_sync():
+			log.insert(ignore_permissions=True)
+			log.sync()
