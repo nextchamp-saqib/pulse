@@ -25,7 +25,6 @@ class WarehouseSyncJob(Document):
 		checkpoint: DF.Data | None
 		creation_key: DF.Data
 		enabled: DF.Check
-		name: DF.Int | None
 		primary_key: DF.Data
 		reference_doctype: DF.Link
 		row_size: DF.Int
@@ -80,9 +79,22 @@ class WarehouseSyncJob(Document):
 			return True
 		return False
 
+	def should_sync(self) -> bool:
+		if not self.enabled:
+			return False
+
+		new_rows = get_etl_batch(self.reference_doctype, self.checkpoint, batch_size=1)
+		if not new_rows:
+			return False
+
+		return True
+
 	@frappe.whitelist()
 	def start_sync(self):
-		"""Create a Warehouse Sync Log and execute the sync now."""
+		if not self.should_sync():
+			frappe.msgprint("No new rows to sync or job is disabled")
+			return
+
 		log = frappe.new_doc("Warehouse Sync Log")
 		log.job = self.name
 		log.insert(ignore_permissions=True)

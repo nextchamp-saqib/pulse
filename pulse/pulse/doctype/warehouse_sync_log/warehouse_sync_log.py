@@ -61,21 +61,16 @@ class WarehouseSyncLog(Document):
 			self._job_instance = frappe.get_doc("Warehouse Sync Job", self.job)
 		return self._job_instance
 
-	def should_sync(self) -> bool:
-		if not self._config.enabled:
-			self.log_msg("Job is disabled")
-			return False
-
-		new_rows = get_etl_batch(self._config.reference_doctype, self._config.checkpoint, batch_size=1)
-		if not new_rows:
-			self.log_msg("No new rows to sync")
-			return False
-
-		return True
+	@property
+	def _warehouse(self):
+		if not hasattr(self, "_conn"):
+			self._conn = get_warehouse_connection()
+		return self._conn
 
 	@frappe.whitelist()
 	def sync(self):
-		if not self.should_sync():
+		if not self._config.should_sync():
+			self.log_msg("No new rows to sync or job is disabled.")
 			self.set_value("status", "Skipped")
 			return
 
@@ -93,7 +88,7 @@ class WarehouseSyncLog(Document):
 		if created:
 			self.log_msg(f"Created table {self._config.table_name} in warehouse.")
 
-		checkpoint = self._config.checkpoint
+		self._checkpoint = self._config.checkpoint
 		self.set_value("status", "In Progress")
 
 		lock_name = f"duckdb_sync:{self._config.table_name}"
@@ -101,22 +96,22 @@ class WarehouseSyncLog(Document):
 
 		try:
 			with filelock(lock_name, timeout=lock_timeout):
-				conn = get_warehouse_connection()
 				while True:
 					batch = get_etl_batch(
 						self._config.reference_doctype,
-						checkpoint=checkpoint,
+						checkpoint=self._checkpoint,
 						batch_size=self.batch_size,
 					)
 					if not batch:
-						self.log_msg(f"No new data to insert after {checkpoint}")
+						self.log_msg(f"No new data to insert after {self._checkpoint}")
 						break
 
 					df = pd.DataFrame.from_records(batch)
-					inserted, checkpoint = self._insert_batch(conn, self._config, df)
+					self._insert_batch(df)
 					if df.shape[0] < self.batch_size:
 						break
 					time.sleep(0.01)
+
 			self.set_value("ended_at", frappe.utils.now_datetime())
 			self.set_value("status", "Completed")
 
@@ -133,15 +128,15 @@ class WarehouseSyncLog(Document):
 			self.set_value("status", "Failed")
 			self.log_msg(f"Error occurred: {e}")
 
-	def _insert_batch(self, conn, job, df) -> tuple[int, str | None]:
-		"""Insert only new rows into warehouse and update counters.
-
+	def _insert_batch(self, df) -> tuple[int, str | None]:
+		"""
+		Insert only new rows into warehouse and update counters.
 		Returns (inserted_count, new_checkpoint)
 		"""
 		source = ibis.memtable(df)
-		target = conn.table(job.table_name)
+		target = self._warehouse.table(self._config.table_name)
 
-		pred = [source[job.primary_key] == target[job.primary_key]]
+		pred = [source[self._config.primary_key] == target[self._config.primary_key]]
 		diff = source.anti_join(target, pred)
 		diff = diff.select(target.columns)
 
@@ -149,17 +144,16 @@ class WarehouseSyncLog(Document):
 		insert_count = int(diff.count().execute())
 		skipped_count = batch_count - insert_count
 		if insert_count > 0:
-			conn.insert(job.table_name, diff)
+			self._warehouse.insert(self._config.table_name, diff)
 
-		checkpoint = df[job.creation_key].max()
+		self._checkpoint = df[self._config.creation_key].max()
 		# persist checkpoint on the job
-		job.set_value("checkpoint", checkpoint)
+		self._config.set_value("checkpoint", self._checkpoint)
 
 		self.log_msg(
-			f"Inserted {insert_count} rows up to {checkpoint}"
+			f"Inserted {insert_count} rows up to {self._checkpoint}"
 			+ (f" (Skipped: {skipped_count})" if skipped_count > 0 else "")
 		)
 
 		self.total_inserted = (self.total_inserted or 0) + insert_count
 		self.set_value("total_inserted", self.total_inserted)
-		return insert_count, checkpoint
