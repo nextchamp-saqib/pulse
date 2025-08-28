@@ -9,6 +9,7 @@ from frappe.utils import now_datetime
 from frappe.utils.logger import get_logger
 
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
+from pulse.pulse.doctype.warehouse_sync_job.warehouse_sync_job import WarehouseSyncJob
 
 logger = get_logger()
 
@@ -119,3 +120,24 @@ class PulseEvent(Document):
 	@staticmethod
 	def get_stats(**kwargs):
 		pass
+
+
+
+def store_pulse_events():
+	get_warehouse_sync_job().start_sync()
+
+
+def get_warehouse_sync_job() -> WarehouseSyncJob:
+	if not frappe.db.exists("Warehouse Sync Job", "Pulse Event"):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Warehouse Sync Job",
+				"reference_doctype": "Pulse Event",
+				"creation_key": "name",
+				"primary_key": "name",
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc
+
+	return frappe.get_doc("Warehouse Sync Job", "Pulse Event")

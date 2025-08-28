@@ -144,7 +144,7 @@ app_license = "AGPLv3"
 # ---------------
 
 scheduler_events = {
-	"all": ["pulse.pulse.doctype.warehouse_sync_job.warehouse_sync_job.sync_warehouse"],
+	"all": ["pulse.pulse.doctype.pulse_event.pulse_event.store_pulse_events"],
 }
 
 # Testing
