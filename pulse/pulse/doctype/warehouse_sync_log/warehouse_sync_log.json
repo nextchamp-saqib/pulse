@@ -6,29 +6,32 @@
  "engine": "InnoDB",
  "field_order": [
   "job",
+  "status",
+  "total_inserted",
   "started_at",
   "ended_at",
-  "status",
   "batch_size",
-  "total_inserted",
   "log"
  ],
  "fields": [
   {
    "fieldname": "started_at",
    "fieldtype": "Datetime",
+   "in_list_view": 1,
    "label": "Started At",
    "read_only": 1
   },
   {
    "fieldname": "ended_at",
    "fieldtype": "Datetime",
+   "in_list_view": 1,
    "label": "Ended At",
    "read_only": 1
   },
   {
    "fieldname": "status",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Status",
    "options": "Queued\nIn Progress\nCompleted\nFailed\nSkipped",
    "read_only": 1
@@ -36,6 +39,7 @@
   {
    "fieldname": "total_inserted",
    "fieldtype": "Int",
+   "in_list_view": 1,
    "label": "Total Inserted",
    "read_only": 1
   },
@@ -63,7 +67,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-08-27 17:48:33.315273",
+ "modified": "2025-08-28 21:42:45.831485",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Warehouse Sync Log",

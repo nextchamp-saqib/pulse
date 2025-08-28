@@ -12,7 +12,6 @@ from frappe.utils.synchronization import filelock
 
 from pulse.logger import get_logger
 from pulse.pulse.doctype.warehouse_sync_job.warehouse_sync_job import (
-	WarehouseSyncJob,
 	get_warehouse_connection,
 )
 from pulse.utils import get_etl_batch
@@ -157,9 +156,8 @@ class WarehouseSyncLog(Document):
 		job.set_value("checkpoint", checkpoint)
 
 		self.log_msg(
-			f"Inserted {insert_count} rows up to {checkpoint}" + (
-				f" (Skipped: {skipped_count})" if skipped_count > 0 else ""
-			)
+			f"Inserted {insert_count} rows up to {checkpoint}"
+			+ (f" (Skipped: {skipped_count})" if skipped_count > 0 else "")
 		)
 
 		self.total_inserted = (self.total_inserted or 0) + insert_count
