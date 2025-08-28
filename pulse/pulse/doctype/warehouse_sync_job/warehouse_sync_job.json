@@ -1,6 +1,6 @@
 {
  "actions": [],
- "autoname": "autoincrement",
+ "autoname": "field:reference_doctype",
  "creation": "2025-08-27 17:17:30.438316",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -26,7 +26,8 @@
    "in_list_view": 1,
    "label": "Reference DocType",
    "options": "DocType",
-   "reqd": 1
+   "reqd": 1,
+   "unique": 1
   },
   {
    "fieldname": "creation_key",
@@ -68,11 +69,11 @@
    "link_fieldname": "job"
   }
  ],
- "modified": "2025-08-27 17:46:30.749544",
+ "modified": "2025-08-28 22:32:27.778409",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Warehouse Sync Job",
- "naming_rule": "Autoincrement",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
