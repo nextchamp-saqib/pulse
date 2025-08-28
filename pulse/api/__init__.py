@@ -49,20 +49,18 @@ def bulk_ingest(events):
 
 
 def check_auth():
-	api_key = frappe.get_single_value("Pulse Settings", "api_key")
+	api_key = frappe.get_single("Pulse Settings").get_password("api_key")
 	if not api_key:
 		frappe.throw("Pulse API key is not configured", frappe.PermissionError)
 
-	# check headers
 	headers = frappe.request.headers
-	if not headers.get("Authorization"):
-		frappe.throw("Authorization header is missing", frappe.PermissionError)
+	header_name = "X-Pulse-API-Key"
+	if not headers.get(header_name):
+		frappe.throw(f"{header_name} header is missing", frappe.PermissionError)
 
-	# check token
-	token = headers.get("Authorization").split(" ")[-1]
+	token = headers.get(header_name)
 	if not token:
 		frappe.throw("Authorization token is missing", frappe.PermissionError)
 
-	# validate token
 	if token != api_key:
 		frappe.throw("Invalid Authorization token", frappe.PermissionError)
