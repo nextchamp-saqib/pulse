@@ -7,10 +7,9 @@ import frappe
 import ibis
 import pandas as pd
 from frappe.model.document import Document
-from frappe.utils import get_files_path, get_table_name
-from ibis.backends.duckdb import Backend as DuckDBBackend
+from frappe.utils import get_table_name
 
-from pulse.utils import get_etl_batch
+from pulse.utils import get_etl_batch, get_warehouse_connection
 
 
 class WarehouseSyncJob(Document):
@@ -70,8 +69,6 @@ class WarehouseSyncJob(Document):
 
 	def ensure_warehouse_table(self) -> bool:
 		"""Ensure the warehouse table exists. Returns True if created."""
-		if not self.table_name:
-			frappe.throw("Table name is not set on the Job")
 		conn = get_warehouse_connection()
 		doctype_schema = self.get_schema_from_meta()
 		if not conn.list_tables(like=self.table_name):
@@ -100,21 +97,6 @@ class WarehouseSyncJob(Document):
 		log.insert(ignore_permissions=True)
 		log.sync()
 		return log.name
-
-
-def get_warehouse_connection() -> DuckDBBackend:
-	"""Get or create a DuckDB connection to the warehouse database (ducklake)."""
-	base = os.path.realpath(get_files_path(is_private=1))
-	folder = os.path.join(base, "duckdb")
-	os.makedirs(folder, exist_ok=True)
-	db_path = os.path.join(folder, "warehouse.ducklake")
-
-	conn: DuckDBBackend = ibis.duckdb.connect()
-	# ensure ducklake extension is available and use attached DB
-	conn.raw_sql("INSTALL ducklake;")
-	conn.attach(f"ducklake:{db_path}", "warehouse")
-	conn.raw_sql("USE warehouse;")
-	return conn
 
 
 def sync_warehouse():

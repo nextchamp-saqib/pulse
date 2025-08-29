@@ -4,16 +4,11 @@
 import time
 
 import frappe
-import ibis
-import pandas as pd
 from frappe.model.document import Document
 from frappe.utils.file_lock import LockTimeoutError
 from frappe.utils.synchronization import filelock
 
 from pulse.logger import get_logger
-from pulse.pulse.doctype.warehouse_sync_job.warehouse_sync_job import (
-	get_warehouse_connection,
-)
 from pulse.utils import get_etl_batch
 
 _logger = get_logger()
@@ -64,16 +59,12 @@ class WarehouseSyncLog(Document):
 	@property
 	def _warehouse(self):
 		if not hasattr(self, "_conn"):
+			from pulse.utils import get_warehouse_connection
 			self._conn = get_warehouse_connection()
 		return self._conn
 
 	@frappe.whitelist()
 	def sync(self):
-		if not self._config.should_sync():
-			self.log_msg("No new rows to sync or job is disabled.")
-			self.set_value("status", "Skipped")
-			return
-
 		# compute batch size using row_size if available (target ~256MB)
 		if self._config.row_size:
 			self.batch_size = max(int((256 * 1024 * 1024) / max(self._config.row_size, 1)), 1)
@@ -82,14 +73,11 @@ class WarehouseSyncLog(Document):
 		self.set_value("log", None)
 		self.set_value("started_at", frappe.utils.now_datetime())
 		self.set_value("status", "In Progress")
+		self._checkpoint = self._config.checkpoint
 
-		# ensure warehouse table exists before starting
 		created = self._config.ensure_warehouse_table()
 		if created:
 			self.log_msg(f"Created table {self._config.table_name} in warehouse.")
-
-		self._checkpoint = self._config.checkpoint
-		self.set_value("status", "In Progress")
 
 		lock_name = f"duckdb_sync:{self._config.table_name}"
 		lock_timeout = 60
@@ -106,9 +94,8 @@ class WarehouseSyncLog(Document):
 						self.log_msg(f"No new data to insert after {self._checkpoint}")
 						break
 
-					df = pd.DataFrame.from_records(batch)
-					self._insert_batch(df)
-					if df.shape[0] < self.batch_size:
+					self._insert_batch(batch)
+					if len(batch) < self.batch_size:
 						break
 					time.sleep(0.01)
 
@@ -128,26 +115,25 @@ class WarehouseSyncLog(Document):
 			self.set_value("status", "Failed")
 			self.log_msg(f"Error occurred: {e}")
 
-	def _insert_batch(self, df) -> tuple[int, str | None]:
+	def _insert_batch(self, batch):
 		"""
 		Insert only new rows into warehouse and update counters.
 		Returns (inserted_count, new_checkpoint)
 		"""
-		source = ibis.memtable(df)
+		source = self._warehouse.create_table("source_batch", batch, temp=True)
 		target = self._warehouse.table(self._config.table_name)
 
 		pred = [source[self._config.primary_key] == target[self._config.primary_key]]
 		diff = source.anti_join(target, pred)
 		diff = diff.select(target.columns)
 
-		batch_count = df.shape[0]
+		batch_count = len(batch)
 		insert_count = int(diff.count().execute())
 		skipped_count = batch_count - insert_count
 		if insert_count > 0:
 			self._warehouse.insert(self._config.table_name, diff)
 
-		self._checkpoint = df[self._config.creation_key].max()
-		# persist checkpoint on the job
+		self._checkpoint = source[self._config.primary_key].max().execute()
 		self._config.set_value("checkpoint", self._checkpoint)
 
 		self.log_msg(

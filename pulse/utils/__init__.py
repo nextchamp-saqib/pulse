@@ -1,5 +1,9 @@
+import os
+
 import frappe
+import ibis
 from frappe.model.utils import is_virtual_doctype
+from frappe.utils import get_files_path
 
 
 def decode(data):
@@ -48,3 +52,20 @@ def get_etl_batch(doctype, checkpoint=None, batch_size=1000):
 		limit=batch_size,
 		order_by=f"{creation_key}, {id_key}",
 	)
+
+
+
+def get_warehouse_connection():
+	db_path = get_db_path()
+	conn = ibis.duckdb.connect()
+	conn.raw_sql("INSTALL ducklake;")
+	conn.raw_sql(f"ATTACH 'ducklake:{db_path}' AS warehouse;")
+	conn.raw_sql("USE warehouse;")
+	return conn
+
+
+def get_db_path():
+	base = os.path.realpath(get_files_path(is_private=1))
+	folder = os.path.join(base, "duckdb")
+	os.makedirs(folder, exist_ok=True)
+	return os.path.join(folder, "warehouse.ducklake")

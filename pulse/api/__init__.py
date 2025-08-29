@@ -9,7 +9,6 @@ logger = get_logger()
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=API_RATE_LIMIT, seconds=API_RATE_LIMIT_SECONDS)
 def ingest(event_name, subject_id, subject_type, captured_at, props=None):
 	check_auth()
 
