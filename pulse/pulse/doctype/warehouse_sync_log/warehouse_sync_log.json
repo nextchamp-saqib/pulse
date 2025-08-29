@@ -67,7 +67,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-08-28 21:42:45.831485",
+ "modified": "2025-08-29 00:22:34.041874",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Warehouse Sync Log",
@@ -90,5 +90,6 @@
  "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "job"
 }
