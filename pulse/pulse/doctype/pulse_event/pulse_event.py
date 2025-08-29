@@ -109,7 +109,7 @@ class PulseEvent(Document):
 	def get_etl_batch(checkpoint=None, batch_size=1000):
 		stream = _get_event_stream()
 		entries = stream.get_entries(min_id=checkpoint, count=batch_size, order="asc")
-		events = (PulseEvent._from_stream_entry(entry) for entry in entries)
+		events = [PulseEvent._from_stream_entry(entry) for entry in entries]
 		return events
 
 	@staticmethod
