@@ -1,15 +1,13 @@
 # Copyright (c) 2025, hello@frappe.io and contributors
 # For license information, please see license.txt
 
-from datetime import datetime
-
 import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 from frappe.utils.logger import get_logger
 
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
-from pulse.pulse.doctype.warehouse_sync_job.warehouse_sync_job import WarehouseSyncJob
+from pulse.pulse.doctype.warehouse_sync.warehouse_sync import WarehouseSync
 
 logger = get_logger()
 
@@ -17,13 +15,12 @@ logger = get_logger()
 _EVENT_STREAM = None
 
 
-def _get_event_stream():
+def _get_event_stream() -> RedisStream:
 	"""Return a cached Redis stream for pulse events (initialized once per process)."""
 	global _EVENT_STREAM
 	if _EVENT_STREAM is None:
 		_EVENT_STREAM = RedisStream.init()
 	return _EVENT_STREAM
-
 
 
 REQD_FIELDS = ["event_name", "captured_at"]
@@ -79,10 +76,6 @@ class PulseEvent(Document):
 	@staticmethod
 	def _from_stream_entry(entry):
 		data = entry.get("data", {})
-		# timestamp_ms = int(entry.get("id").split("-")[0])
-		# timestamp_s = timestamp_ms / 1000
-		# creation = datetime.fromtimestamp(timestamp_s)
-
 		return {
 			"name": entry.get("id"),
 			"event_name": data.get("event_name"),
@@ -105,7 +98,7 @@ class PulseEvent(Document):
 	@staticmethod
 	def get_list(filters=None, page_length=None, **kwargs):
 		stream = _get_event_stream()
-		entries = stream.get_entries(page_length)
+		entries = stream.get_entries(count=page_length)
 		return [PulseEvent._from_stream_entry(entry) for entry in entries]
 
 	@staticmethod
@@ -125,13 +118,12 @@ class PulseEvent(Document):
 		pass
 
 
-
 def store_pulse_events():
-	get_warehouse_sync_job().start_sync()
+	get_warehouse_sync().start_sync()
 
 
-def get_warehouse_sync_job() -> WarehouseSyncJob:
-	if not frappe.db.exists("Warehouse Sync Job", "Pulse Event"):
+def get_warehouse_sync() -> WarehouseSync:
+	if not frappe.db.exists("Warehouse Sync", "Pulse Event"):
 		doc = frappe.get_doc(
 			{
 				"doctype": "Warehouse Sync Job",
@@ -143,4 +135,4 @@ def get_warehouse_sync_job() -> WarehouseSyncJob:
 		doc.insert(ignore_permissions=True)
 		return doc
 
-	return frappe.get_doc("Warehouse Sync Job", "Pulse Event")
+	return frappe.get_doc("Warehouse Sync", "Pulse Event")

@@ -81,7 +81,7 @@ class RedisStream(Document):
 			"length": self.get_length(),
 			"lag": self.get_unacknowledged_length(),
 			"memory_usage": pretty_bytes(self.get_memory_usage()),
-			"entries_per_minute": self.get_entries_per_minute(),
+			"entries_per_minute": self.get_entries_per_interval(),
 			"consumers": self.get_consumers(),
 			"entries": self.get_entries(),
 		}
@@ -129,10 +129,9 @@ class RedisStream(Document):
 		with suppress(Exception):
 			return self.conn.memory_usage(self.key)
 
-	def get_entries_per_minute(self):
-		# Calculate the number of entries processed per minute
-		# The id of the entries can be used as timestamp to calculate the rate
-		interval = 60  # 1 minute
+	def get_entries_per_interval(self, interval_minutes=1):
+		# TODO: for very high throughput streams, this might be inefficient
+		interval = interval_minutes * 60  # convert to seconds
 		now_ms = int(time.time() * 1000)
 		start_id = f"{now_ms - (interval * 1000)}-0"
 
@@ -211,7 +210,7 @@ class RedisStream(Document):
 	def add(self, data):
 		try:
 			serialized = self.serialize(data)
-			max_len = frappe.get_single_value("Pulse Settings", "max_stream_length") or 100_000
+			max_len = frappe.get_single_value("Pulse Settings", "max_stream_length") or STREAM_MAX_LENGTH
 			self.conn.xadd(self.key, serialized, maxlen=max_len, approximate=True)
 		except Exception as e:
 			logger.error(f"Failed to add entry to Redis stream: {e!s}")
@@ -300,10 +299,8 @@ class RedisStream(Document):
 	def _warn_if_stream_near_capacity(self):
 		with suppress(Exception):
 			lag = self.get_unacknowledged_length()
-			if lag > 0.8 * STREAM_MAX_LENGTH:
+			max_len = frappe.get_single_value("Pulse Settings", "max_stream_length") or STREAM_MAX_LENGTH
+			if lag > 0.8 * max_len:
 				logger.warning(
 					f"Redis stream '{self.name}' is nearing capacity. Length: {self.get_length()}, Unacknowledged: {lag}"
 				)
-
-	def move_to_dlq(self, entries):
-		pass
