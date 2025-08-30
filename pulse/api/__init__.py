@@ -9,16 +9,17 @@ logger = get_logger()
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def ingest(event_name, subject_id, subject_type, captured_at, props=None):
+def ingest(event_name, captured_at, site=None, app=None, user=None, properties=None):
 	check_auth()
 
 	try:
 		doc = frappe.new_doc("Pulse Event")
 		doc.event_name = event_name
-		doc.subject_id = subject_id
-		doc.subject_type = subject_type
 		doc.captured_at = captured_at
-		doc.props = props or {}
+		doc.site = site
+		doc.app = app
+		doc.user = user
+		doc.properties = properties or {}
 		doc.validate()
 		doc.db_insert()
 	except Exception as e:
@@ -37,10 +38,11 @@ def bulk_ingest(events):
 		try:
 			doc = frappe.new_doc("Pulse Event")
 			doc.event_name = event.get("event_name")
-			doc.subject_id = event.get("subject_id")
-			doc.subject_type = event.get("subject_type")
 			doc.captured_at = event.get("captured_at")
-			doc.props = event.get("props") or {}
+			doc.site = event.get("site")
+			doc.user = event.get("user")
+			doc.app = event.get("app")
+			doc.properties = event.get("properties") or {}
 			doc.validate()
 			doc.db_insert()
 		except Exception as e:

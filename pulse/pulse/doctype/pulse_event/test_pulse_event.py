@@ -50,9 +50,10 @@ class IntegrationTestPulseEvent(IntegrationTestCase):
 				"doctype": "Pulse Event",
 				"event_name": "integration_test_event",
 				"captured_at": frappe.utils.now_datetime(),
-				"subject_id": "sub-1",
-				"subject_type": "TestType",
-				"props": {"key": "value"},
+				"site": "test-site",
+				"app": "test-app",
+				"user": "test-user",
+				"properties": {"key": "value"},
 			}
 		)
 		pe.db_insert()
@@ -66,10 +67,9 @@ class IntegrationTestPulseEvent(IntegrationTestCase):
 		# populate a Document from that entry
 		payload = {
 			"event_name": "load_test",
-			"subject_id": "s1",
-			"subject_type": "T",
 			"captured_at": frappe.utils.now_datetime(),
-			"props": {},
+			"site": "load-test-site",
+			"properties": {},
 		}
 		self.stream.add(payload)
 
@@ -81,7 +81,8 @@ class IntegrationTestPulseEvent(IntegrationTestCase):
 		# loaded document should have matching fields
 		pe = frappe.get_doc("Pulse Event", entry.get("id"))
 		self.assertEqual(pe.event_name, payload.get("event_name"))
-		self.assertEqual(pe.subject_id, payload.get("subject_id"))
+		self.assertEqual(pe.captured_at, payload.get("captured_at"))
+		self.assertEqual(pe.site, payload.get("site"))
 
 	def test_get_list_and_get_etl_batch(self):
 		# add a few entries and test get_etl_batch generator
@@ -89,9 +90,8 @@ class IntegrationTestPulseEvent(IntegrationTestCase):
 			self.stream.add(
 				{
 					"event_name": f"etl_{i}",
-					"subject_id": str(i),
-					"subject_type": "T",
 					"captured_at": frappe.utils.now_datetime(),
+					"site": f"site_{i}",
 				}
 			)
 
@@ -108,9 +108,8 @@ class IntegrationTestPulseEvent(IntegrationTestCase):
 		for i in range(2):
 			self.stream.add({
 				"event_name": f"etl_after_{i}",
-				"subject_id": f"after_{i}",
-				"subject_type": "T",
 				"captured_at": frappe.utils.now_datetime(),
+				"site": f"after_site_{i}",
 			})
 
 		new_events = list(PulseEvent.get_etl_batch(checkpoint=last_id, batch_size=10))
@@ -122,9 +121,8 @@ class IntegrationTestPulseEvent(IntegrationTestCase):
 		self.stream.add(
 			{
 				"event_name": "del_test",
-				"subject_id": "d1",
-				"subject_type": "T",
 				"captured_at": frappe.utils.now_datetime(),
+				"site": "del-test-site",
 			}
 		)
 		# ensure key exists

@@ -26,7 +26,7 @@ def _get_event_stream():
 
 
 
-REQD_FIELDS = ["event_name", "captured_at", "subject_id", "subject_type"]
+REQD_FIELDS = ["event_name", "captured_at"]
 
 
 class PulseEvent(Document):
@@ -38,12 +38,13 @@ class PulseEvent(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		app: DF.Data | None
 		captured_at: DF.Datetime | None
 		event_name: DF.Data | None
-		props: DF.JSON | None
+		properties: DF.JSON | None
 		received_at: DF.Datetime | None
-		subject_id: DF.Data | None
-		subject_type: DF.Data | None
+		site: DF.Data | None
+		user: DF.Data | None
 	# end: auto-generated types
 
 	@property
@@ -61,11 +62,12 @@ class PulseEvent(Document):
 		self.stream.add(
 			{
 				"event_name": self.get("event_name"),
-				"subject_id": self.get("subject_id"),
-				"subject_type": self.get("subject_type"),
 				"captured_at": self.get("captured_at"),
+				"site": self.get("site"),
+				"user": self.get("user"),
+				"app": self.get("app"),
+				"properties": self.get("properties") or {},
 				"received_at": now_datetime(),
-				"props": self.get("props") or {},
 			}
 		)
 
@@ -77,20 +79,21 @@ class PulseEvent(Document):
 	@staticmethod
 	def _from_stream_entry(entry):
 		data = entry.get("data", {})
-		timestamp_ms = int(entry.get("id").split("-")[0])
-		timestamp_s = timestamp_ms / 1000
-		creation = datetime.fromtimestamp(timestamp_s)
+		# timestamp_ms = int(entry.get("id").split("-")[0])
+		# timestamp_s = timestamp_ms / 1000
+		# creation = datetime.fromtimestamp(timestamp_s)
 
 		return {
 			"name": entry.get("id"),
 			"event_name": data.get("event_name"),
-			"subject_id": data.get("subject_id"),
-			"subject_type": data.get("subject_type"),
 			"captured_at": data.get("captured_at"),
+			"properties": data.get("properties"),
+			"site": data.get("site"),
+			"user": data.get("user"),
+			"app": data.get("app"),
 			"received_at": data.get("received_at"),
-			"props": data.get("props"),
-			"creation": creation,
-			"modified": creation,
+			"creation": data.get("received_at"),
+			"modified": data.get("received_at"),
 		}
 
 	def db_update(self):
