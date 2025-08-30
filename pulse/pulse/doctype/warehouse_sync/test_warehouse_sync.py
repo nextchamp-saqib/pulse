@@ -13,9 +13,9 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 
-class IntegrationTestWarehouseSyncLog(IntegrationTestCase):
+class IntegrationTestWarehouseSync(IntegrationTestCase):
 	"""
-	Integration tests for WarehouseSyncLog.
+	Integration tests for WarehouseSync.
 	Use this class for testing interactions between multiple components.
 	"""
 

@@ -1,15 +1,18 @@
 # Copyright (c) 2025, hello@frappe.io and contributors
 # For license information, please see license.txt
 
-import os
+import time
+from functools import cached_property
 
 import frappe
-import ibis
-import pandas as pd
 from frappe.model.document import Document
-from frappe.utils import get_table_name
+from frappe.utils.file_lock import LockTimeoutError
+from frappe.utils.synchronization import filelock
 
-from pulse.utils import get_etl_batch, get_warehouse_connection
+from pulse.logger import get_logger
+from pulse.utils import get_etl_batch
+
+_logger = get_logger()
 
 
 class WarehouseSyncJob(Document):
@@ -21,91 +24,119 @@ class WarehouseSyncJob(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		checkpoint: DF.Data | None
-		creation_key: DF.Data
-		enabled: DF.Check
-		primary_key: DF.Data
-		reference_doctype: DF.Link
-		row_size: DF.Int
-		table_name: DF.Data | None
+		batch_size: DF.Int
+		config: DF.Link
+		ended_at: DF.Datetime | None
+		log: DF.LongText | None
+		name: DF.Int | None
+		started_at: DF.Datetime | None
+		status: DF.Literal["Queued", "In Progress", "Completed", "Failed", "Skipped"]
+		total_inserted: DF.Int
 	# end: auto-generated types
 
-	def set_value(self, fieldname, value, commit: bool = True):
+	def set_value(self, fieldname, value, commit=True):
 		self.set(fieldname, value)
 		frappe.db.set_value(self.doctype, self.name, fieldname, value)
 		self.notify_update()
 		if commit:
 			frappe.db.commit()
 
-	def validate(self):
-		meta = frappe.get_meta(self.reference_doctype)
-		if meta.issingle:
-			frappe.throw("Reference Doctype cannot be a Single Document")
+	def log_msg(self, msg: str):
+		if not self.log:
+			self.log = ""
+		self.log += f"{frappe.utils.now_datetime()}: {msg}\n"
+		self.set_value("log", self.log)
 
-	def before_save(self):
-		self.creation_key = self.creation_key or "creation"
-		self.primary_key = self.primary_key or "name"
-		self.table_name = get_table_name(self.reference_doctype)
-		self.calculate_row_size()
+	def before_insert(self):
+		self.total_inserted = 0
+		self.batch_size = self.batch_size or 1000
 
-	def calculate_row_size(self, sample_size: int = 10):
-		"""
-		Estimate average row size in bytes and persist in row_size.
-		Uses a small sample from the source doctype to estimate memory usage.
-		"""
-		sample = get_etl_batch(self.reference_doctype, batch_size=sample_size)
-		df = pd.DataFrame.from_records(sample)
-		if df.empty:
-			return
-		total_size = sum(df[col].memory_usage(deep=True) for col in df.columns)
-		row_size_bytes = int(total_size / max(len(df), 1))
-		self.row_size = row_size_bytes
+	@cached_property
+	def _config(self):
+		return frappe.get_doc("Warehouse Sync", self.config)
 
-	def get_schema_from_meta(self):
-		"""Derive an ibis schema from a sample of source records."""
-		rows = get_etl_batch(self.reference_doctype, batch_size=1)
-		df = pd.DataFrame.from_records(rows).fillna("")
-		return ibis.memtable(df).schema()
-
-	def ensure_warehouse_table(self) -> bool:
-		"""Ensure the warehouse table exists. Returns True if created."""
-		conn = get_warehouse_connection()
-		doctype_schema = self.get_schema_from_meta()
-		if not conn.list_tables(like=self.table_name):
-			conn.create_table(self.table_name, schema=doctype_schema)
-			return True
-		return False
-
-	def should_sync(self) -> bool:
-		if not self.enabled:
-			return False
-
-		new_rows = get_etl_batch(self.reference_doctype, self.checkpoint, batch_size=1)
-		if not new_rows:
-			return False
-
-		return True
+	@cached_property
+	def _warehouse(self):
+		from pulse.utils import get_warehouse_connection
+		return get_warehouse_connection()
 
 	@frappe.whitelist()
-	def start_sync(self):
-		if not self.should_sync():
-			frappe.msgprint("No new rows to sync or job is disabled")
-			return
+	def run(self):
+		# compute batch size using row_size if available (target ~256MB)
+		if self._config.row_size:
+			self.batch_size = max(int((256 * 1024 * 1024) / max(self._config.row_size, 1)), 1)
+			self.set_value("batch_size", self.batch_size)
 
-		log = frappe.new_doc("Warehouse Sync Log")
-		log.job = self.name
-		log.insert(ignore_permissions=True)
-		log.sync()
-		return log.name
+		self.set_value("log", None)
+		self.set_value("started_at", frappe.utils.now_datetime())
+		self.set_value("status", "In Progress")
+		self._checkpoint = self._config.checkpoint
 
+		created = self._config.ensure_warehouse_table()
+		if created:
+			self.log_msg(f"Created table {self._config.table_name} in warehouse.")
 
-def sync_warehouse():
-	if not frappe.db.exists("Warehouse Sync Job", {"enabled": 1}):
-		return
+		lock_name = f"duckdb_sync:{self._config.table_name}"
+		lock_timeout = 60
 
-	for job in frappe.get_all("Warehouse Sync Job", filters={"enabled": 1}):
-		log = frappe.new_doc("Warehouse Sync Log")
-		log.job = job.name
-		if log.should_sync():
-			log.insert(ignore_permissions=True)
-			log.sync()
+		try:
+			with filelock(lock_name, timeout=lock_timeout):
+				while True:
+					batch = get_etl_batch(
+						self._config.reference_doctype,
+						checkpoint=self._checkpoint,
+						batch_size=self.batch_size,
+					)
+					if not batch:
+						self.log_msg(f"No new data to insert after {self._checkpoint}")
+						break
+
+					self._insert_batch(batch)
+					if len(batch) < self.batch_size:
+						break
+					time.sleep(0.01)
+
+			self.set_value("ended_at", frappe.utils.now_datetime())
+			self.set_value("status", "Completed")
+
+		except LockTimeoutError:
+			self.set_value("status", "Skipped")
+			self.log_msg(
+				f"Failed to acquire lock for {self._config.reference_doctype}, another sync already running."
+			)
+
+		except Exception as e:
+			_logger.error(
+				f"Error occurred while synchronizing {self._config.reference_doctype} to warehouse: {e}"
+			)
+			self.set_value("status", "Failed")
+			self.log_msg(f"Error occurred: {e}")
+
+	def _insert_batch(self, batch):
+		"""
+		Insert only new rows into warehouse and update counters.
+		Returns (inserted_count, new_checkpoint)
+		"""
+		source = self._warehouse.create_table("source_batch", batch, temp=True)
+		target = self._warehouse.table(self._config.table_name)
+
+		pred = [source[self._config.primary_key] == target[self._config.primary_key]]
+		diff = source.anti_join(target, pred)
+		diff = diff.select(target.columns)
+
+		batch_count = len(batch)
+		insert_count = int(diff.count().execute())
+		skipped_count = batch_count - insert_count
+		if insert_count > 0:
+			self._warehouse.insert(self._config.table_name, diff)
+
+		self._checkpoint = source[self._config.primary_key].max().execute()
+		self._config.set_value("checkpoint", self._checkpoint)
+
+		self.log_msg(
+			f"Inserted {insert_count} rows up to {self._checkpoint}"
+			+ (f" (Skipped: {skipped_count})" if skipped_count > 0 else "")
+		)
+
+		self.total_inserted = (self.total_inserted or 0) + insert_count
+		self.set_value("total_inserted", self.total_inserted)

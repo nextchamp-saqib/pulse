@@ -1,79 +1,77 @@
 {
  "actions": [],
- "autoname": "field:reference_doctype",
- "creation": "2025-08-27 17:17:30.438316",
+ "autoname": "autoincrement",
+ "creation": "2025-08-27 17:20:00.969023",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "enabled",
-  "reference_doctype",
-  "creation_key",
-  "primary_key",
-  "checkpoint",
-  "table_name",
-  "row_size"
+  "config",
+  "status",
+  "total_inserted",
+  "started_at",
+  "ended_at",
+  "batch_size",
+  "log"
  ],
  "fields": [
   {
-   "default": "0",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "label": "Enabled"
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Started At",
+   "read_only": 1
   },
   {
-   "fieldname": "reference_doctype",
+   "fieldname": "ended_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Ended At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Queued\nIn Progress\nCompleted\nFailed\nSkipped",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_inserted",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Total Inserted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "log",
+   "fieldtype": "Long Text",
+   "label": "Log",
+   "read_only": 1
+  },
+  {
+   "fieldname": "batch_size",
+   "fieldtype": "Int",
+   "label": "Batch Size",
+   "read_only": 1
+  },
+  {
+   "fieldname": "config",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Reference DocType",
-   "options": "DocType",
-   "reqd": 1,
-   "unique": 1
-  },
-  {
-   "fieldname": "creation_key",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Creation Key",
+   "label": "Config",
+   "options": "Warehouse Sync",
    "reqd": 1
-  },
-  {
-   "fieldname": "primary_key",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Primary Key",
-   "reqd": 1
-  },
-  {
-   "fieldname": "checkpoint",
-   "fieldtype": "Data",
-   "label": "Checkpoint"
-  },
-  {
-   "fieldname": "table_name",
-   "fieldtype": "Data",
-   "label": "Table Name",
-   "read_only": 1
-  },
-  {
-   "fieldname": "row_size",
-   "fieldtype": "Int",
-   "label": "Row Size",
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
- "links": [
-  {
-   "link_doctype": "Warehouse Sync Log",
-   "link_fieldname": "job"
-  }
- ],
- "modified": "2025-08-28 22:32:27.778409",
+ "links": [],
+ "modified": "2025-08-30 20:39:17.244467",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Warehouse Sync Job",
- "naming_rule": "By fieldname",
+ "naming_rule": "Autoincrement",
  "owner": "Administrator",
  "permissions": [
   {
@@ -93,5 +91,5 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
- "title_field": "reference_doctype"
+ "title_field": "config"
 }
