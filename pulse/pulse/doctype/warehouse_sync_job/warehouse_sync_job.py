@@ -58,7 +58,7 @@ class WarehouseSyncJob(Document):
 	@cached_property
 	def _warehouse(self):
 		from pulse.utils import get_warehouse_connection
-		return get_warehouse_connection()
+		return get_warehouse_connection(readonly=False)
 
 	@frappe.whitelist()
 	def run(self):

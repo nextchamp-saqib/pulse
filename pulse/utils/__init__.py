@@ -55,11 +55,11 @@ def get_etl_batch(doctype, checkpoint=None, batch_size=1000):
 
 
 
-def get_warehouse_connection():
+def get_warehouse_connection(readonly=True):
 	db_path = get_db_path()
 	conn = ibis.duckdb.connect()
 	conn.raw_sql("INSTALL ducklake;")
-	conn.raw_sql(f"ATTACH 'ducklake:{db_path}' AS warehouse;")
+	conn.raw_sql(f"ATTACH 'ducklake:{db_path}' AS warehouse {'(READ_ONLY)' if readonly else ''};")
 	conn.raw_sql("USE warehouse;")
 	return conn
 

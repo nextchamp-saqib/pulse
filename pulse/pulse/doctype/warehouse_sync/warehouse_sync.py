@@ -8,6 +8,7 @@ import pandas as pd
 from frappe.model.document import Document
 from frappe.utils import get_table_name
 
+from pulse.logger import get_logger
 from pulse.utils import get_etl_batch, get_warehouse_connection
 
 
@@ -68,7 +69,7 @@ class WarehouseSync(Document):
 
 	def ensure_warehouse_table(self) -> bool:
 		"""Ensure the warehouse table exists. Returns True if created."""
-		conn = get_warehouse_connection()
+		conn = get_warehouse_connection(readonly=False)
 		doctype_schema = self.get_schema_from_meta()
 		if not conn.list_tables(like=self.table_name):
 			conn.create_table(self.table_name, schema=doctype_schema)
@@ -88,7 +89,7 @@ class WarehouseSync(Document):
 	@frappe.whitelist()
 	def start_sync(self):
 		if not self.should_sync():
-			frappe.msgprint("No new rows to sync or job is disabled")
+			get_logger().info("No new rows to sync or sync disabled")
 			return
 
 		job = frappe.new_doc("Warehouse Sync Job")
