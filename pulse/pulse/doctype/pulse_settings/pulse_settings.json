@@ -5,20 +5,33 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "api_key"
+  "api_key",
+  "rate_limit",
+  "max_stream_length"
  ],
  "fields": [
   {
    "fieldname": "api_key",
    "fieldtype": "Password",
    "label": "API Key"
+  },
+  {
+   "description": "Events per minute",
+   "fieldname": "rate_limit",
+   "fieldtype": "Int",
+   "label": "Rate Limit"
+  },
+  {
+   "fieldname": "max_stream_length",
+   "fieldtype": "Int",
+   "label": "Max Stream Length"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-08-22 16:14:47.782590",
+ "modified": "2025-08-30 20:21:12.645927",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Pulse Settings",

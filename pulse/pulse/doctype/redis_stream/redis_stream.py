@@ -211,7 +211,8 @@ class RedisStream(Document):
 	def add(self, data):
 		try:
 			serialized = self.serialize(data)
-			self.conn.xadd(self.key, serialized, maxlen=STREAM_MAX_LENGTH, approximate=True)
+			max_len = frappe.get_single_value("Pulse Settings", "max_stream_length") or 100_000
+			self.conn.xadd(self.key, serialized, maxlen=max_len, approximate=True)
 		except Exception as e:
 			logger.error(f"Failed to add entry to Redis stream: {e!s}")
 			raise

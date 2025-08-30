@@ -3,12 +3,15 @@ from frappe.rate_limiter import rate_limit
 
 from pulse.logger import get_logger
 
-from ..constants import API_RATE_LIMIT, API_RATE_LIMIT_SECONDS
-
 logger = get_logger()
 
 
+def get_rate_limit():
+	return frappe.get_single_value("Pulse Settings", "rate_limit") or 10
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=get_rate_limit, seconds=60 * 60)
 def ingest(event_name, captured_at, site=None, app=None, user=None, properties=None):
 	check_auth()
 
@@ -27,7 +30,7 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, properties=N
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=API_RATE_LIMIT, seconds=API_RATE_LIMIT_SECONDS)
+@rate_limit(limit=get_rate_limit, seconds=60 * 60)
 def bulk_ingest(events):
 	check_auth()
 

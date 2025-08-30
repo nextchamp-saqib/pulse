@@ -8,7 +8,7 @@ import frappe
 from frappe.tests import IntegrationTestCase  # type: ignore
 from frappe.utils.background_jobs import get_redis_conn
 
-from pulse.constants import PENDING_MIN_IDLE_MS, STREAM_MAX_LENGTH
+from pulse.constants import PENDING_MIN_IDLE_MS
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
 
 
