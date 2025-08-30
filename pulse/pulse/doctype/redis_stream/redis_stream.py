@@ -183,6 +183,10 @@ class RedisStream(Document):
 		with suppress(Exception):
 			self.conn.delete(self.key)
 
+	def delete_entry(self, entry_id):
+		with suppress(Exception):
+			self.conn.xdel(self.key, entry_id)
+
 	@staticmethod
 	def get_list(filters=None, page_length=20, **kwargs):
 		conn = get_redis_conn()

@@ -100,7 +100,7 @@ class PulseEvent(Document):
 		raise NotImplementedError
 
 	def delete(self):
-		self.stream.delete(self.name)
+		self.stream.delete_entry(self.name)
 
 	@staticmethod
 	def get_list(filters=None, page_length=None, **kwargs):
