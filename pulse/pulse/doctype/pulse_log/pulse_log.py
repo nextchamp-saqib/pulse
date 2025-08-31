@@ -151,7 +151,7 @@ def read_pulse_log():
 				"id": str(entry_index),
 				"timestamp": parsed["timestamp"],
 				"level": parsed["level"],
-				"message": parsed["message"],
+				"message": parsed["message"].lstrip("pulse "),
 			}
 			entry_index += 1
 		else:
