@@ -126,7 +126,7 @@ def get_warehouse_sync() -> WarehouseSync:
 	if not frappe.db.exists("Warehouse Sync", "Pulse Event"):
 		doc = frappe.get_doc(
 			{
-				"doctype": "Warehouse Sync Job",
+				"doctype": "Warehouse Sync",
 				"reference_doctype": "Pulse Event",
 				"creation_key": "name",
 				"primary_key": "name",
