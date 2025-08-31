@@ -5,6 +5,7 @@ import time
 from functools import cached_property
 
 import frappe
+import ibis
 from frappe.model.document import Document
 from frappe.utils.file_lock import LockTimeoutError
 from frappe.utils.synchronization import filelock
@@ -117,7 +118,7 @@ class WarehouseSyncJob(Document):
 		Insert only new rows into warehouse and update counters.
 		Returns (inserted_count, new_checkpoint)
 		"""
-		source = self._warehouse.create_table("source_batch", batch, temp=True)
+		source = ibis.memtable(batch)
 		target = self._warehouse.table(self._config.table_name)
 
 		pred = [source[self._config.primary_key] == target[self._config.primary_key]]
