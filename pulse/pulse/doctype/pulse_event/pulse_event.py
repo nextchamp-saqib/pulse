@@ -12,15 +12,15 @@ from pulse.pulse.doctype.warehouse_sync.warehouse_sync import WarehouseSync
 logger = get_logger()
 
 
-_EVENT_STREAM = None
+_EVENT_STREAMS = {}
 
 
 def _get_event_stream() -> RedisStream:
-	"""Return a cached Redis stream for pulse events (initialized once per process)."""
-	global _EVENT_STREAM
-	if _EVENT_STREAM is None:
-		_EVENT_STREAM = RedisStream.init()
-	return _EVENT_STREAM
+	site = getattr(frappe.local, "site", None) or "default"
+	# Cache per-site to avoid returning the stream for another site
+	if site not in _EVENT_STREAMS:
+		_EVENT_STREAMS[site] = RedisStream.init()
+	return _EVENT_STREAMS[site]
 
 
 REQD_FIELDS = ["event_name", "captured_at"]
