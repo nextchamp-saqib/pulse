@@ -54,8 +54,16 @@ class RedisStream(Document):
 	@property
 	def conn(self):
 		if not hasattr(self, "_conn"):
-			# using redis queue connection as it has some level of persistence
-			self._conn = get_redis_conn()
+			try:
+				# using redis queue connection as it has some level of persistence
+				self._conn = get_redis_conn()
+			except Exception as e:
+				logger.error({
+					"message": "Failed to get redis connection",
+					"error": str(e),
+					"stream": self.name,
+				})
+				raise
 			self.create_if_not_exists()
 		return self._conn
 
@@ -93,22 +101,17 @@ class RedisStream(Document):
 			self.conn.xgroup_create(self.key, self.group, id="0", mkstream=True)
 
 	def get_length(self):
-		try:
+		length = 0
+		with suppress(Exception):
 			length = self.conn.xlen(self.key)
-		except Exception as e:
-			length = 0
-			logger.error(f"Failed to get stream length: {e!s}")
-
 		return length
 
 	def get_info(self):
-		try:
+		info = None
+		with suppress(Exception):
 			info = self.conn.xinfo_stream(self.key)
 			# ensure bytes are converted to strings for JSON serialization
 			info = decode(info)
-		except Exception:
-			info = None
-
 		return info
 
 	def get_unacknowledged_length(self):
@@ -136,36 +139,34 @@ class RedisStream(Document):
 		start_id = f"{now_ms - (interval * 1000)}-0"
 
 		with suppress(Exception):
-			items = self.conn.xrange(self.key, min=start_id, max="+")
-			return len(items or [])
+			items = self.conn.xrange(self.key, min=start_id, max="+") or []
+			return len(items)
 
 	def get_group_info(self):
-		try:
+		group_info = None
+		with suppress(Exception):
 			group_info = self.conn.xinfo_groups(self.key)
 			group_info = decode(group_info)
-		except Exception:
-			group_info = None
 
 		return group_info
 
 	def get_consumers(self):
-		with suppress(Exception):
-			consumers = []
-			for g in self.conn.xinfo_groups(self.key) or []:
-				group = decode(g)
-				if group["name"] == self.group:
-					for c in self.conn.xinfo_consumers(self.key, group["name"]) or []:
-						consumer = decode(c)
-						consumer["consumer_name"] = consumer["name"]
-						consumer["idle"] = consumer["idle"] / 1000
-						consumer["group"] = group["name"]
-						consumer["group_info"] = frappe.as_json(group, indent=4)
-						consumers.append(consumer)
-			return consumers
+		consumers = []
+		for g in self.conn.xinfo_groups(self.key) or []:
+			group = decode(g)
+			if group["name"] == self.group:
+				for c in self.conn.xinfo_consumers(self.key, group["name"]) or []:
+					consumer = decode(c)
+					consumer["consumer_name"] = consumer["name"]
+					consumer["idle"] = consumer["idle"] / 1000
+					consumer["group"] = group["name"]
+					consumer["group_info"] = frappe.as_json(group, indent=4)
+					consumers.append(consumer)
+		return consumers
 
 	def get_entries(self, min_id=None, max_id=None, count=10, order="desc"):
 		entries = []
-		with suppress(Exception):
+		try:
 			min_id = min_id or "-"
 			max_id = max_id or "+"
 			if order == "desc":
@@ -173,6 +174,12 @@ class RedisStream(Document):
 			else:
 				entries = self.conn.xrange(self.key, min=min_id, max=max_id, count=count) or []
 			entries = [self._normalize_entry(e) for e in entries]
+		except Exception as e:
+			logger.error({
+				"message": "Failed to get stream entries",
+				"error": str(e),
+				"stream": self.name,
+			})
 		return entries
 
 	def db_update(self):
@@ -213,7 +220,11 @@ class RedisStream(Document):
 			max_len = frappe.get_single_value("Pulse Settings", "max_stream_length") or STREAM_MAX_LENGTH
 			self.conn.xadd(self.key, serialized, maxlen=max_len, approximate=True)
 		except Exception as e:
-			logger.error(f"Failed to add entry to Redis stream: {e!s}")
+			logger.error({
+				"message": "Failed to add entry to stream",
+				"error": str(e),
+				"stream": self.name,
+			})
 			raise
 
 	def serialize(self, data):
@@ -232,7 +243,12 @@ class RedisStream(Document):
 		try:
 			self.conn.xack(self.key, self.group, *ids)
 		except Exception as e:
-			logger.error(f"Failed to acknowledge entries: {e!s}")
+			logger.error({
+				"message": "Failed to acknowledge stream entries",
+				"ids": ids,
+				"error": str(e),
+				"stream": self.name,
+			})
 
 	def read_pending(self, count=100):
 		result = self.conn.xreadgroup(
@@ -274,7 +290,11 @@ class RedisStream(Document):
 			if len(entries) < count:
 				entries += self.read_new(count - len(entries)) or []
 		except Exception as e:
-			logger.error(f"Failed to read entries: {e!s}")
+			logger.error({
+				"message": "Failed to read stream entries",
+				"stream": self.name,
+				"error": str(e),
+			})
 
 		return [self._normalize_entry(entry) for entry in entries]
 
@@ -295,12 +315,3 @@ class RedisStream(Document):
 			if result:
 				return self._normalize_entry(result[0])
 		return None
-
-	def _warn_if_stream_near_capacity(self):
-		with suppress(Exception):
-			lag = self.get_unacknowledged_length()
-			max_len = frappe.get_single_value("Pulse Settings", "max_stream_length") or STREAM_MAX_LENGTH
-			if lag > 0.8 * max_len:
-				logger.warning(
-					f"Redis stream '{self.name}' is nearing capacity. Length: {self.get_length()}, Unacknowledged: {lag}"
-				)

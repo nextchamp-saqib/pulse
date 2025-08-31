@@ -26,7 +26,13 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, properties=N
 		doc.validate()
 		doc.db_insert()
 	except Exception as e:
-		logger.error(f"Failed to insert event: {event_name}, Error: {e}")
+		logger.error(
+			{
+				"request_ip": frappe.local.request_ip,
+				"event": {"event_name": event_name, "site": site, "app": app, "user": user},
+				"error": str(e),
+			}
+		)
 		raise e
 
 
@@ -37,19 +43,41 @@ def bulk_ingest(events):
 		frappe.throw("Events must be a list", frappe.ValidationError)
 
 	check_auth()
+	failed = []
 	for event in events:
 		try:
+			event = frappe._dict(event)
 			doc = frappe.new_doc("Pulse Event")
-			doc.event_name = event.get("event_name")
-			doc.captured_at = event.get("captured_at")
-			doc.site = event.get("site")
-			doc.user = event.get("user")
-			doc.app = event.get("app")
-			doc.properties = event.get("properties") or {}
+			doc.event_name = event.event_name
+			doc.captured_at = event.captured_at
+			doc.site = event.site
+			doc.user = event.user
+			doc.app = event.app
+			doc.properties = event.properties or {}
 			doc.validate()
 			doc.db_insert()
 		except Exception as e:
-			logger.error(f"Failed to insert event: {event}, Error: {e}")
+			failed.append(
+				{
+					"event": {
+						"event_name": event.event_name,
+						"site": event.site,
+						"app": event.app,
+						"user": event.user,
+					},
+					"error": str(e),
+				}
+			)
+
+	if failed:
+		logger.error(
+			{
+				"request_ip": frappe.local.request_ip,
+				"events": failed,
+				"error": "Failed to insert some events",
+			}
+		)
+		frappe.throw("Failed to insert some events", frappe.ValidationError)
 
 
 def check_auth():
@@ -62,9 +90,19 @@ def check_auth():
 	header_name = "X-Pulse-API-Key"
 	req_api_key = headers.get(header_name)
 	if not req_api_key:
-		logger.error(f"{header_name} header is missing")
+		logger.error(
+			{
+				"request_ip": frappe.local.request_ip,
+				"error": f"{header_name} header is missing",
+			}
+		)
 		frappe.throw(f"{header_name} header is missing", frappe.PermissionError)
 
 	if req_api_key != api_key:
-		logger.error(f"Invalid {header_name}")
+		logger.error(
+			{
+				"request_ip": frappe.local.request_ip,
+				"error": f"Invalid {header_name}",
+			}
+		)
 		frappe.throw(f"Invalid {header_name}", frappe.PermissionError)
