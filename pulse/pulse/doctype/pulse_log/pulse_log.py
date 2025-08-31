@@ -49,7 +49,7 @@ class PulseLog(Document):
 		level_filter = None
 		if isinstance(filters, dict):
 			level_filter = filters.get("level")
-		if isinstance(filters, list) and len(filters[0]) == 4:
+		if isinstance(filters, list) and len(filters) and len(filters[0]) == 4:
 			for f in filters:
 				if f[1] == "level" and f[2] == "=":
 					level_filter = f[3]
@@ -77,7 +77,7 @@ class PulseLog(Document):
 		level_filter = None
 		if isinstance(filters, dict):
 			level_filter = filters.get("level")
-		if isinstance(filters, list) and len(filters[0]) == 4:
+		if isinstance(filters, list) and len(filters) and len(filters[0]) == 4:
 			for f in filters:
 				if f[1] == "level" and f[2] == "=":
 					level_filter = f[3]
