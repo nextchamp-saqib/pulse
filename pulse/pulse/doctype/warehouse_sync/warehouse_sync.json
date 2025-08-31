@@ -66,10 +66,10 @@
  "links": [
   {
    "link_doctype": "Warehouse Sync Job",
-   "link_fieldname": "job"
+   "link_fieldname": "config"
   }
  ],
- "modified": "2025-08-28 22:32:27.778409",
+ "modified": "2025-08-31 23:24:06.762639",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Warehouse Sync",
