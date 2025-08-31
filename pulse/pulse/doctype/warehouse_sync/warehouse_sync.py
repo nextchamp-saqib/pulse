@@ -11,6 +11,8 @@ from frappe.utils import get_table_name
 from pulse.logger import get_logger
 from pulse.utils import get_etl_batch, get_warehouse_connection
 
+logger = get_logger()
+
 
 class WarehouseSync(Document):
 	# begin: auto-generated types
@@ -48,6 +50,7 @@ class WarehouseSync(Document):
 		self.table_name = get_table_name(self.reference_doctype)
 		self.calculate_row_size()
 
+	@frappe.whitelist()
 	def calculate_row_size(self, sample_size: int = 10):
 		"""
 		Estimate average row size in bytes and persist in row_size.
@@ -78,10 +81,12 @@ class WarehouseSync(Document):
 
 	def should_sync(self) -> bool:
 		if not self.enabled:
+			logger.info(f"Warehouse Sync {self.name} is disabled")
 			return False
 
 		new_rows = get_etl_batch(self.reference_doctype, self.checkpoint, batch_size=1)
 		if not new_rows:
+			logger.info(f"Warehouse Sync {self.name} has no new rows to sync")
 			return False
 
 		return True
@@ -89,7 +94,6 @@ class WarehouseSync(Document):
 	@frappe.whitelist()
 	def start_sync(self):
 		if not self.should_sync():
-			get_logger().info("No new rows to sync or sync disabled")
 			return
 
 		job = frappe.new_doc("Warehouse Sync Job")
