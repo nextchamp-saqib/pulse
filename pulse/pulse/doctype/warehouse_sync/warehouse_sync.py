@@ -70,23 +70,21 @@ class WarehouseSync(Document):
 		df = pd.DataFrame.from_records(rows).fillna("")
 		return ibis.memtable(df).schema()
 
-	def ensure_warehouse_table(self) -> bool:
-		"""Ensure the warehouse table exists. Returns True if created."""
-		conn = get_warehouse_connection(readonly=False)
+	def ensure_warehouse_table(self, conn=None) -> bool:
+		conn = conn or get_warehouse_connection(readonly=False)
 		doctype_schema = self.get_schema_from_meta()
 		if not conn.list_tables(like=self.table_name):
 			conn.create_table(self.table_name, schema=doctype_schema)
-			return True
-		return False
+			logger.info(f"Created table {self.table_name} in warehouse")
 
 	def should_sync(self) -> bool:
 		if not self.enabled:
-			logger.info(f"Warehouse Sync {self.name} is disabled")
+			logger.info(f"Warehouse Sync {self.name} is disabled. Skipping...")
 			return False
 
 		new_rows = get_etl_batch(self.reference_doctype, self.checkpoint, batch_size=1)
 		if not new_rows:
-			logger.info(f"Warehouse Sync {self.name} has no new rows to sync")
+			logger.info(f"Warehouse Sync {self.name} has no new rows to sync. Skipping...")
 			return False
 
 		return True

@@ -7,13 +7,11 @@ from functools import cached_property
 import frappe
 import ibis
 from frappe.model.document import Document
-from frappe.utils.file_lock import LockTimeoutError
-from frappe.utils.synchronization import filelock
 
 from pulse.logger import get_logger
 from pulse.utils import get_etl_batch
 
-_logger = get_logger()
+logger = get_logger()
 
 
 class WarehouseSyncJob(Document):
@@ -67,57 +65,40 @@ class WarehouseSyncJob(Document):
 		if self._config.row_size:
 			self.batch_size = max(int((256 * 1024 * 1024) / max(self._config.row_size, 1)), 1)
 			self.set_value("batch_size", self.batch_size)
+			self.log_msg(f"Using batch size of {self.batch_size} based on row size")
 
 		self.set_value("log", None)
 		self.set_value("started_at", frappe.utils.now_datetime())
 		self.set_value("status", "In Progress")
 		self._checkpoint = self._config.checkpoint
 
-		created = self._config.ensure_warehouse_table()
-		if created:
-			self.log_msg(f"Created table {self._config.table_name} in warehouse.")
-
-		lock_name = f"duckdb_sync:{self._config.table_name}"
-		lock_timeout = 60
-
 		try:
-			with filelock(lock_name, timeout=lock_timeout):
-				while True:
-					batch = get_etl_batch(
-						self._config.reference_doctype,
-						checkpoint=self._checkpoint,
-						batch_size=self.batch_size,
-					)
-					if not batch:
-						self.log_msg(f"No new data to insert after {self._checkpoint}")
-						break
+			self._config.ensure_warehouse_table(conn=self._warehouse)
 
-					self._insert_batch(batch)
-					if len(batch) < self.batch_size:
-						break
-					time.sleep(0.01)
+			while True:
+				batch = get_etl_batch(
+					self._config.reference_doctype,
+					checkpoint=self._checkpoint,
+					batch_size=self.batch_size,
+				)
+				if not batch:
+					self.log_msg(f"No new data to insert after {self._checkpoint}")
+					break
+
+				self._insert_batch(batch)
+				if len(batch) < self.batch_size:
+					break
+				time.sleep(0.01)
 
 			self.set_value("ended_at", frappe.utils.now_datetime())
 			self.set_value("status", "Completed")
 
-		except LockTimeoutError:
-			self.set_value("status", "Skipped")
-			self.log_msg(
-				f"Failed to acquire lock for {self._config.reference_doctype}, another sync already running."
-			)
-
 		except Exception as e:
-			_logger.error(
-				f"Error occurred while synchronizing {self._config.reference_doctype} to warehouse: {e}"
-			)
+			logger.error(f"Warehouse Sync Job {self.name} failed: {e}")
 			self.set_value("status", "Failed")
-			self.log_msg(f"Error occurred: {e}")
+			self.log_msg(f"Error: {e}")
 
 	def _insert_batch(self, batch):
-		"""
-		Insert only new rows into warehouse and update counters.
-		Returns (inserted_count, new_checkpoint)
-		"""
 		source = ibis.memtable(batch)
 		target = self._warehouse.table(self._config.table_name)
 

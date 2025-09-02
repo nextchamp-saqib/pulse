@@ -133,6 +133,7 @@ def get_warehouse_sync() -> WarehouseSync:
 			}
 		)
 		doc.insert(ignore_permissions=True)
+		logger.info("Created Warehouse Sync for Pulse Event")
 		return doc
 
 	return frappe.get_doc("Warehouse Sync", "Pulse Event")

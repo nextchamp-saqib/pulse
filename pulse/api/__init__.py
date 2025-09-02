@@ -11,7 +11,7 @@ def get_rate_limit():
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=get_rate_limit, seconds=60 * 60)
+@rate_limit(limit=get_rate_limit, seconds=60 * 10) # 10 requests in 10 minutes
 def ingest(event_name, captured_at, site=None, app=None, user=None, properties=None):
 	check_auth()
 
@@ -37,7 +37,7 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, properties=N
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=get_rate_limit, seconds=60 * 60)
+@rate_limit(limit=get_rate_limit, seconds=60 * 60) # 10 requests in 1 hour
 def bulk_ingest(events):
 	if not isinstance(events, list):
 		frappe.throw("Events must be a list", frappe.ValidationError)
