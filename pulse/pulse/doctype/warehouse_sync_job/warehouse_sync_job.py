@@ -9,7 +9,7 @@ import ibis
 from frappe.model.document import Document
 
 from pulse.logger import get_logger
-from pulse.utils import get_etl_batch
+from pulse.utils import get_etl_batch, log_error
 
 logger = get_logger()
 
@@ -60,6 +60,7 @@ class WarehouseSyncJob(Document):
 		return get_warehouse_connection(readonly=False)
 
 	@frappe.whitelist()
+	@log_error()
 	def run(self):
 		# compute batch size using row_size if available (target ~256MB)
 		if self._config.row_size:
@@ -94,7 +95,6 @@ class WarehouseSyncJob(Document):
 			self.set_value("status", "Completed")
 
 		except Exception as e:
-			logger.error(f"Warehouse Sync Job {self.name} failed: {e}")
 			self.set_value("status", "Failed")
 			self.log_msg(f"Error: {e}")
 

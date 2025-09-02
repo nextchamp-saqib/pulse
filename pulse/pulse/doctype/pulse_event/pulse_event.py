@@ -8,6 +8,7 @@ from frappe.utils.logger import get_logger
 
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
 from pulse.pulse.doctype.warehouse_sync.warehouse_sync import WarehouseSync
+from pulse.utils import log_error
 
 logger = get_logger()
 
@@ -118,6 +119,7 @@ class PulseEvent(Document):
 		pass
 
 
+@log_error()
 def store_pulse_events():
 	get_warehouse_sync().start_sync()
 

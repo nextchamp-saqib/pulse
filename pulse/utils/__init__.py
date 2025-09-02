@@ -5,6 +5,31 @@ import ibis
 from frappe.model.utils import is_virtual_doctype
 from frappe.utils import get_files_path
 
+from pulse.logger import get_logger
+
+logger = get_logger()
+
+
+def log_error():
+	def decorator(func):
+		def wrapper(*args, **kwargs):
+			try:
+				return func(*args, **kwargs)
+			except Exception as e:
+				traceback = frappe.as_unicode(frappe.get_traceback(with_context=True))
+				logger.error({
+					"function": f"{func.__module__}.{func.__qualname__}",
+					"args": args,
+					"kwargs": kwargs,
+					"error": str(e),
+					"traceback": traceback,
+				})
+				raise e
+
+		return wrapper
+
+	return decorator
+
 
 def decode(data):
 	if isinstance(data, bytes):
@@ -54,7 +79,7 @@ def get_etl_batch(doctype, checkpoint=None, batch_size=1000):
 	)
 
 
-
+@log_error()
 def get_warehouse_connection(readonly=True):
 	db_path = get_db_path()
 	conn = ibis.duckdb.connect()
