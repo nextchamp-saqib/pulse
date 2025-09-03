@@ -17,13 +17,15 @@ def log_error():
 				return func(*args, **kwargs)
 			except Exception as e:
 				traceback = frappe.as_unicode(frappe.get_traceback(with_context=True))
-				logger.error({
-					"function": f"{func.__module__}.{func.__qualname__}",
-					"args": args,
-					"kwargs": kwargs,
-					"error": str(e),
-					"traceback": traceback,
-				})
+				logger.error(
+					{
+						"function": f"{func.__module__}.{func.__qualname__}",
+						"args": args,
+						"kwargs": kwargs,
+						"error": str(e),
+						"traceback": traceback,
+					}
+				)
 				raise e
 
 		return wrapper
@@ -86,11 +88,31 @@ def get_warehouse_connection(readonly=True):
 	conn.raw_sql("INSTALL ducklake;")
 	conn.raw_sql(f"ATTACH 'ducklake:{db_path}' AS warehouse {'(READ_ONLY)' if readonly else ''};")
 	conn.raw_sql("USE warehouse;")
+	ensure_file_record(db_path)
 	return conn
 
 
 def get_db_path():
 	base = os.path.realpath(get_files_path(is_private=1))
-	folder = os.path.join(base, "duckdb")
-	os.makedirs(folder, exist_ok=True)
-	return os.path.join(folder, "warehouse.ducklake")
+	return os.path.join(base, "warehouse.duckdb")
+
+
+def ensure_file_record(db_path):
+	if not os.path.exists(db_path):
+		return
+
+	if not frappe.db.exists("File", {"file_url": "/private/files/warehouse.duckdb"}):
+		size = os.path.getsize(db_path)
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": "warehouse.duckdb",
+				"file_url": "/private/files/warehouse.duckdb",
+				"file_size": size,
+				"attached_to_doctype": "Pulse Settings",
+				"attached_to_name": "Pulse Settings",
+				"is_private": 1,
+			}
+		)
+		file_doc.db_insert()
+		frappe.db.commit()
