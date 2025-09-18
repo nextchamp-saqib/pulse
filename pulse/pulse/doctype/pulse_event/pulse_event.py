@@ -3,7 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import now_datetime
+from frappe.utils import convert_utc_to_system_timezone, get_datetime, now_datetime
 from frappe.utils.logger import get_logger
 
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
@@ -57,10 +57,14 @@ class PulseEvent(Document):
 
 	def db_insert(self, *args, **kwargs):
 		self.validate()
+		captured_at = get_datetime(self.get("captured_at"))
+		if captured_at.tzinfo and captured_at.tzinfo.utc:
+			captured_at = convert_utc_to_system_timezone(captured_at)
+
 		self.stream.add(
 			{
 				"event_name": self.get("event_name"),
-				"captured_at": self.get("captured_at"),
+				"captured_at": captured_at,
 				"site": self.get("site"),
 				"user": self.get("user"),
 				"app": self.get("app"),
