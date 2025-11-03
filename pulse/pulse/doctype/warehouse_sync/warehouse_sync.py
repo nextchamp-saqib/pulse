@@ -98,3 +98,11 @@ class WarehouseSync(Document):
 		job.config = self.name
 		job.insert(ignore_permissions=True)
 		job.run()
+
+	def cleanup_warehouse(self):
+		conn = get_warehouse_connection(readonly=False)
+		try:
+			conn.raw_sql("CALL ducklake_merge_adjacent_files('warehouse');")
+			conn.raw_sql("CALL ducklake_cleanup_old_files('warehouse', cleanup_all => true);")
+		finally:
+			conn.disconnect()
