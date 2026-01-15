@@ -3,8 +3,8 @@ import time
 
 import frappe
 from frappe.core.doctype.server_script.server_script import execute_api_server_script
-from frappe.pulse.client import capture, send_queued_events
 from frappe.utils.scheduler import get_scheduler_tick
+from frappe.utils.telemetry.pulse.client import capture, send_queued_events
 
 # Base company names
 COMPANY_NAMES = [
