@@ -49,6 +49,7 @@ class WarehouseSync(Document):
 		self.primary_key = self.primary_key or "name"
 		self.table_name = get_table_name(self.reference_doctype)
 		self.calculate_row_size()
+		self.set_data_inlining_limit()
 
 	@frappe.whitelist()
 	def calculate_row_size(self, sample_size: int = 10):
@@ -63,6 +64,21 @@ class WarehouseSync(Document):
 		total_size = sum(df[col].memory_usage(deep=True) for col in df.columns)
 		row_size_bytes = int(total_size / max(len(df), 1))
 		self.row_size = row_size_bytes
+
+	def set_data_inlining_limit(self):
+		if not self.row_size:
+			return
+
+		memory_limit = 10 * 1024 * 1024  # 10 MB
+		row_limit = max(int(memory_limit / self.row_size), 1)
+		conn = get_warehouse_connection(readonly=False)
+		try:
+			conn.raw_sql(
+				f"CALL warehouse.set_option('data_inlining_row_limit', {row_limit}, table_name => '{self.table_name}');",
+			)
+			logger.info(f"Set data inlining row limit to {row_limit} for table {self.table_name}")
+		finally:
+			conn.disconnect()
 
 	def get_schema_from_meta(self):
 		"""Derive an ibis schema from a sample of source records."""
