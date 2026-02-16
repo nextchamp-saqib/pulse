@@ -66,19 +66,8 @@ class WarehouseSync(Document):
 		self.row_size = row_size_bytes
 
 	def set_data_inlining_limit(self):
-		if not self.row_size:
-			return
-
-		memory_limit = 10 * 1024 * 1024  # 10 MB
-		row_limit = max(int(memory_limit / self.row_size), 1)
-		conn = get_warehouse_connection(readonly=False)
-		try:
-			conn.raw_sql(
-				f"CALL warehouse.set_option('data_inlining_row_limit', {row_limit}, table_name => '{self.table_name}');",
-			)
-			logger.info(f"Set data inlining row limit to {row_limit} for table {self.table_name}")
-		finally:
-			conn.disconnect()
+		# DuckLake-only optimization. No-op after migration to plain DuckDB.
+		return
 
 	def get_schema_from_meta(self):
 		"""Derive an ibis schema from a sample of source records."""
@@ -116,9 +105,5 @@ class WarehouseSync(Document):
 		job.run()
 
 	def cleanup_warehouse(self):
-		conn = get_warehouse_connection(readonly=False)
-		try:
-			conn.raw_sql("CALL ducklake_merge_adjacent_files('warehouse');")
-			conn.raw_sql("CALL ducklake_cleanup_old_files('warehouse', cleanup_all => true);")
-		finally:
-			conn.disconnect()
+		# DuckLake-only maintenance. No-op after migration to plain DuckDB.
+		return

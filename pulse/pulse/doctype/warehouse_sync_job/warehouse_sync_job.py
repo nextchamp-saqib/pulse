@@ -7,6 +7,7 @@ from functools import cached_property
 import frappe
 import ibis
 from frappe.model.document import Document
+from frappe.utils.synchronization import LockTimeoutError, filelock
 
 from pulse.logger import get_logger
 from pulse.utils import get_etl_batch, log_error
@@ -62,6 +63,15 @@ class WarehouseSyncJob(Document):
 	@frappe.whitelist()
 	@log_error()
 	def run(self):
+		lock_name = f"pulse_warehouse_sync_{self.config}"
+		try:
+			with filelock(lock_name, timeout=1):
+				self._run_locked()
+		except LockTimeoutError:
+			self.set_value("status", "Skipped")
+			self.log_msg("Skipped run because another sync job is already in progress")
+
+	def _run_locked(self):
 		# compute batch size using row_size if available (target ~256MB)
 		if self._config.row_size:
 			self.batch_size = max(int((256 * 1024 * 1024) / max(self._config.row_size, 1)), 1)
@@ -97,6 +107,9 @@ class WarehouseSyncJob(Document):
 		except Exception as e:
 			self.set_value("status", "Failed")
 			self.log_msg(f"Error: {e}")
+		finally:
+			if "_warehouse" in self.__dict__:
+				self._warehouse.disconnect()
 
 	def _insert_batch(self, batch):
 		source = ibis.memtable(batch)
