@@ -5,3 +5,4 @@
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 pulse.patches.migrate_ducklake_to_duckdb
+pulse.patches.migrate_duckdb_events_to_mariadb

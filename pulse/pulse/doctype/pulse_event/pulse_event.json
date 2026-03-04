@@ -1,6 +1,6 @@
 {
  "actions": [],
- "autoname": "prompt",
+ "autoname": "hash",
  "creation": "2025-08-24 15:11:22.905364",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -19,7 +19,8 @@
    "fieldname": "event_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Event Name"
+   "label": "Event Name",
+   "reqd": 1
   },
   {
    "fieldname": "column_break_swwj",
@@ -28,7 +29,9 @@
   {
    "fieldname": "captured_at",
    "fieldtype": "Datetime",
-   "label": "Captured At"
+   "label": "Captured At",
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "received_at",
@@ -57,14 +60,13 @@
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
- "is_virtual": 1,
+ "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2025-08-30 13:18:58.894643",
+ "modified": "2026-03-04 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Pulse Event",
- "naming_rule": "Set by user",
+ "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
   {

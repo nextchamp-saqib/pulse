@@ -145,7 +145,6 @@ app_license = "AGPLv3"
 
 scheduler_events = {
 	"all": [
-		"pulse.pulse.doctype.pulse_event.pulse_event.store_pulse_events",
 		"pulse.utils.simulator.run_scheduled_simulation",
 	],
 }

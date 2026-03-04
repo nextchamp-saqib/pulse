@@ -15,7 +15,6 @@ class PulseSettings(Document):
 		from frappe.types import DF
 
 		api_key: DF.Password | None
-		max_stream_length: DF.Int
 		rate_limit: DF.Int
 	# end: auto-generated types
 

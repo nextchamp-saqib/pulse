@@ -6,8 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "api_key",
-  "rate_limit",
-  "max_stream_length"
+  "rate_limit"
  ],
  "fields": [
   {
@@ -20,11 +19,6 @@
    "fieldname": "rate_limit",
    "fieldtype": "Int",
    "label": "Rate Limit"
-  },
-  {
-   "fieldname": "max_stream_length",
-   "fieldtype": "Int",
-   "label": "Max Stream Length"
   }
  ],
  "grid_page_length": 50,
