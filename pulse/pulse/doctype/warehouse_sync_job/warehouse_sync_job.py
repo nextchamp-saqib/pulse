@@ -119,6 +119,11 @@ class WarehouseSyncJob(Document):
 		diff = source.anti_join(target, pred)
 		diff = diff.select(target.columns)
 
+		if self._config.sort_by:
+			sort_cols = [c.strip() for c in self._config.sort_by.split(",") if c.strip() in diff.columns]
+			if sort_cols:
+				diff = diff.order_by(sort_cols)
+
 		batch_count = len(batch)
 		insert_count = int(diff.count().execute())
 		skipped_count = batch_count - insert_count

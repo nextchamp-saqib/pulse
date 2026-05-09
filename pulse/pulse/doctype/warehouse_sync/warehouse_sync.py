@@ -29,6 +29,7 @@ class WarehouseSync(Document):
 		primary_key: DF.Data
 		reference_doctype: DF.Link
 		row_size: DF.Int
+		sort_by: DF.Data | None
 		table_name: DF.Data | None
 	# end: auto-generated types
 

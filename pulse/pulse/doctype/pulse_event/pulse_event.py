@@ -81,17 +81,19 @@ class PulseEvent(Document):
 	@staticmethod
 	def _from_stream_entry(entry):
 		data = entry.get("data", {})
+		received_at = get_datetime(data["received_at"]) if data.get("received_at") else None
+		captured_at = get_datetime(data["captured_at"]) if data.get("captured_at") else None
 		return {
 			"name": entry.get("id"),
 			"event_name": data.get("event_name"),
-			"captured_at": data.get("captured_at"),
+			"captured_at": captured_at,
 			"properties": data.get("properties"),
 			"site": data.get("site"),
 			"user": data.get("user"),
 			"app": data.get("app"),
-			"received_at": data.get("received_at"),
-			"creation": data.get("received_at"),
-			"modified": data.get("received_at"),
+			"received_at": received_at,
+			"creation": received_at,
+			"modified": received_at,
 		}
 
 	def db_update(self):
@@ -136,10 +138,14 @@ def get_warehouse_sync() -> WarehouseSync:
 				"reference_doctype": "Pulse Event",
 				"creation_key": "name",
 				"primary_key": "name",
+				"sort_by": "event_name,site,app,user,received_at",
 			}
 		)
 		doc.insert(ignore_permissions=True)
 		logger.info("Created Warehouse Sync for Pulse Event")
 		return doc
 
-	return frappe.get_doc("Warehouse Sync", "Pulse Event")
+	doc = frappe.get_doc("Warehouse Sync", "Pulse Event")
+	if not doc.sort_by:
+		doc.db_set("sort_by", "event_name,site,app,user,received_at")
+	return doc

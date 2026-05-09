@@ -9,6 +9,7 @@
   "reference_doctype",
   "creation_key",
   "primary_key",
+  "sort_by",
   "checkpoint",
   "table_name",
   "row_size"
@@ -42,6 +43,11 @@
    "in_list_view": 1,
    "label": "Primary Key",
    "reqd": 1
+  },
+  {
+   "fieldname": "sort_by",
+   "fieldtype": "Data",
+   "label": "Sort By"
   },
   {
    "fieldname": "checkpoint",
