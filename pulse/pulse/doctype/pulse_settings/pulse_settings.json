@@ -16,7 +16,7 @@
    "label": "API Key"
   },
   {
-   "description": "Events per minute",
+   "description": "Max ingest requests per minute, per site (default 60)",
    "fieldname": "rate_limit",
    "fieldtype": "Int",
    "label": "Rate Limit"

@@ -7,11 +7,14 @@ logger = get_logger()
 
 
 def get_rate_limit():
-	return frappe.get_single_value("Pulse Settings", "rate_limit") or 10
+	# Max ingest requests allowed per minute, per site (see `key="site"` below).
+	# Keyed on site rather than IP: many Frappe Cloud sites share one outbound IP,
+	# so a single shared IP bucket would throttle them all.
+	return frappe.get_single_value("Pulse Settings", "rate_limit") or 60
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=get_rate_limit, seconds=60 * 10) # 10 requests in 10 minutes
+@rate_limit(key="site", limit=get_rate_limit, seconds=60)
 def ingest(event_name, captured_at, site=None, app=None, user=None, properties=None):
 	check_auth()
 
@@ -37,11 +40,19 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, properties=N
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=get_rate_limit, seconds=60 * 60) # 10 requests in 1 hour
-def bulk_ingest(events):
+def bulk_ingest(events, site=None):
 	if not isinstance(events, list):
 		frappe.throw("Events must be a list", frappe.ValidationError)
 
+	# The rate limiter reads its bucket key from form_dict. Prefer a top-level
+	# `site` sent by the client; until the client sends it, fall back to the batch
+	# (single-site, since the client's event queue is site-namespaced).
+	frappe.form_dict["site"] = site or (events[0].get("site") if events else None)
+	_bulk_ingest(events)
+
+
+@rate_limit(key="site", limit=get_rate_limit, seconds=60)
+def _bulk_ingest(events):
 	check_auth()
 	failed = []
 	for event in events:
