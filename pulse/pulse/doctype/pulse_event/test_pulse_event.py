@@ -1,132 +1,102 @@
 # Copyright (c) 2025, hello@frappe.io and Contributors
 # See license.txt
 
-import time
 import uuid
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase  # type: ignore
 from frappe.utils.background_jobs import get_redis_conn
 
-import pulse.pulse.doctype.pulse_event.pulse_event as pulse_event_mod
-from pulse.pulse.doctype.pulse_event.pulse_event import PulseEvent
+from pulse.pulse.doctype.pulse_event.pulse_event import (
+	consume_pulse_events,
+	enqueue_event,
+)
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
 
 
 class IntegrationTestPulseEvent(IntegrationTestCase):
 	"""
-	Integration tests for PulseEvent virtual doctype.
-	These tests use a real Redis instance (do not mock Redis). They create a
-	unique stream per test via ``frappe.flags.test_stream_name`` and clean up
-	created keys after the test.
+	Integration tests for the Pulse Event ingest -> stream -> database pipeline.
+	These tests use a real Redis instance (do not mock Redis). Each test gets a
+	unique stream (via ``frappe.flags.test_stream_name``) and tags its events with
+	a unique ``event_name`` prefix, so assertions and cleanup are scoped to the
+	test's own rows and never touch existing site data.
 	"""
 
 	def setUp(self):
 		super().setUp()
-		self.test_stream_name = f"test_pulse_event_{uuid.uuid4().hex}"
+		token = uuid.uuid4().hex
+		self.test_stream_name = f"test_pulse_event_{token}"
+		self.prefix = f"test_{token}_"
 		frappe.flags.test_stream_name = self.test_stream_name
 		self.stream = RedisStream.init(name=self.test_stream_name)
 		self.conn = get_redis_conn()
-		# ensure PulseEvent uses our test stream instance
-		pulse_event_mod._EVENT_STREAM = self.stream
 
 	def tearDown(self):
 		self.stream.delete()
-		pulse_event_mod._EVENT_STREAM = None
 		frappe.flags.test_stream_name = None
+		# Only remove rows this test created; leave existing site data untouched.
+		frappe.db.delete("Pulse Event", {"event_name": ("like", f"{self.prefix}%")})
+		frappe.db.commit()
 		super().tearDown()
 
-	def test_validate_throws_when_missing_required_fields(self):
-		doc = frappe.new_doc("Pulse Event")
+	def _enqueue(self, name, **kwargs):
+		kwargs.setdefault("captured_at", frappe.utils.now_datetime())
+		enqueue_event(event_name=f"{self.prefix}{name}", **kwargs)
+
+	def _count(self):
+		return frappe.db.count("Pulse Event", {"event_name": ("like", f"{self.prefix}%")})
+
+	def test_enqueue_validates_required_fields(self):
 		with self.assertRaises(frappe.ValidationError):
-			doc.validate()
+			enqueue_event(event_name=None, captured_at=frappe.utils.now_datetime())
+		with self.assertRaises(frappe.ValidationError):
+			enqueue_event(event_name="x", captured_at=None)
 
-	def test_db_insert_adds_entry_to_stream(self):
-		# create a PulseEvent document and call db_insert which should add
-		# an entry to the underlying Redis stream
-		# then ensure stream length increased and get_count via PulseEvent returns >= 1
-		pe = frappe.get_doc(
-			{
-				"doctype": "Pulse Event",
-				"event_name": "integration_test_event",
-				"captured_at": frappe.utils.now_datetime(),
-				"site": "test-site",
-				"app": "test-app",
-				"user": "test-user",
-				"properties": {"key": "value"},
-			}
+	def test_enqueue_adds_entry_to_stream(self):
+		self._enqueue(
+			"signup",
+			site="test-site",
+			app="test-app",
+			user="anon_testuser",
+			team="team_test",
+			properties={"key": "value"},
 		)
-		pe.db_insert()
+		self.assertGreaterEqual(self.stream.get_length(), 1)
 
-		length = self.stream.get_length()
-		self.assertGreaterEqual(length, 1)
-		self.assertGreaterEqual(PulseEvent.get_count(), 1)
-
-	def test_load_from_db_and_get_entry(self):
-		# add a raw entry to stream and then use PulseEvent.load_from_db to
-		# populate a Document from that entry
-		payload = {
-			"event_name": "load_test",
-			"captured_at": frappe.utils.now_datetime(),
-			"site": "load-test-site",
-			"properties": {},
-		}
-		self.stream.add(payload)
-
-		# fetch the newest entry id
-		entries = self.stream.get_entries(count=1)
-		self.assertTrue(entries)
-		entry = entries[0]
-
-		# loaded document should have matching fields
-		pe = frappe.get_doc("Pulse Event", entry.get("id"))
-		self.assertEqual(pe.event_name, payload.get("event_name"))
-		self.assertEqual(pe.captured_at, payload.get("captured_at"))
-		self.assertEqual(pe.site, payload.get("site"))
-
-	def test_get_list_and_get_etl_batch(self):
-		# add a few entries and test get_etl_batch generator
+	def test_consume_writes_events_to_database(self):
 		for i in range(3):
-			self.stream.add(
-				{
-					"event_name": f"etl_{i}",
-					"captured_at": frappe.utils.now_datetime(),
-					"site": f"site_{i}",
-				}
-			)
+			self._enqueue(f"evt_{i}", site=f"site_{i}", properties={"i": i})
 
-		# get an iterator of events from checkpoint None
-		events = PulseEvent.get_etl_batch(checkpoint=None, batch_size=10)
-		# materialize first few events
-		collected = list(events)
-		self.assertGreaterEqual(len(collected), 1)
+		consume_pulse_events()
 
-		# capture the last id from the batch as a checkpoint
-		last_id = collected[-1].get("name")
-
-		# now add a few more entries after checkpoint
-		for i in range(2):
-			self.stream.add({
-				"event_name": f"etl_after_{i}",
-				"captured_at": frappe.utils.now_datetime(),
-				"site": f"after_site_{i}",
-			})
-
-		new_events = list(PulseEvent.get_etl_batch(checkpoint=last_id, batch_size=10))
-		# expect at least the newly added events to be present
-		self.assertGreaterEqual(len(new_events), 2)
-
-	def test_delete_removes_stream_key(self):
-		# add an entry, then delete via RedisStream.delete and assert key gone
-		self.stream.add(
-			{
-				"event_name": "del_test",
-				"captured_at": frappe.utils.now_datetime(),
-				"site": "del-test-site",
-			}
+		rows = frappe.get_all(
+			"Pulse Event",
+			filters={"event_name": ("like", f"{self.prefix}%")},
+			fields=["name", "event_name", "site", "properties"],
 		)
-		# ensure key exists
-		self.assertTrue(self.conn.exists(self.stream.key))
-		# delete and assert key no longer exists
-		self.stream.delete()
-		self.assertFalse(self.conn.exists(self.stream.key))
+		self.assertEqual(len(rows), 3)
+		names = {r.event_name for r in rows}
+		self.assertEqual(names, {f"{self.prefix}evt_{i}" for i in range(3)})
+		# name is the stream entry id; properties round-trips as valid JSON
+		row = next(r for r in rows if r.event_name == f"{self.prefix}evt_1")
+		self.assertEqual(frappe.parse_json(row.properties), {"i": 1})
+
+	def test_consume_is_idempotent_on_redelivery(self):
+		self._enqueue("once", site="s")
+
+		# Simulate a crash after the insert commits but before XACK: the row is
+		# written, but the entry stays pending and is redelivered on the next drain.
+		with patch.object(RedisStream, "ack_entries", lambda self, ids: None):
+			consume_pulse_events()
+		self.assertEqual(self._count(), 1)
+
+		# Second drain re-reads the pending entry and re-inserts it. ignore_duplicates
+		# on the entry-id primary key keeps the table at exactly one row.
+		consume_pulse_events()
+		self.assertEqual(self._count(), 1)
+
+	def test_consume_no_events_is_noop(self):
+		consume_pulse_events()
+		self.assertEqual(self._count(), 0)

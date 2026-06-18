@@ -2,6 +2,7 @@ import frappe
 from frappe.rate_limiter import rate_limit
 
 from pulse.logger import get_logger
+from pulse.pulse.doctype.pulse_event.pulse_event import enqueue_event
 
 logger = get_logger()
 
@@ -15,19 +16,19 @@ def get_rate_limit():
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(key="site", limit=get_rate_limit, seconds=60)
-def ingest(event_name, captured_at, site=None, app=None, user=None, properties=None):
+def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, properties=None):
 	check_auth()
 
 	try:
-		doc = frappe.new_doc("Pulse Event")
-		doc.event_name = event_name
-		doc.captured_at = captured_at
-		doc.site = site
-		doc.app = app
-		doc.user = user
-		doc.properties = properties or {}
-		doc.validate()
-		doc.db_insert()
+		enqueue_event(
+			event_name=event_name,
+			captured_at=captured_at,
+			site=site,
+			app=app,
+			user=user,
+			team=team,
+			properties=properties,
+		)
 	except Exception as e:
 		logger.error(
 			{
@@ -58,15 +59,15 @@ def _bulk_ingest(events):
 	for event in events:
 		try:
 			event = frappe._dict(event)
-			doc = frappe.new_doc("Pulse Event")
-			doc.event_name = event.event_name
-			doc.captured_at = event.captured_at
-			doc.site = event.site
-			doc.user = event.user
-			doc.app = event.app
-			doc.properties = event.properties or {}
-			doc.validate()
-			doc.db_insert()
+			enqueue_event(
+				event_name=event.event_name,
+				captured_at=event.captured_at,
+				site=event.site,
+				app=event.app,
+				user=event.user,
+				team=event.team,
+				properties=event.properties,
+			)
 		except Exception as e:
 			failed.append(
 				{

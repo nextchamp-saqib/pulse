@@ -7,10 +7,10 @@
  "field_order": [
   "event_name",
   "captured_at",
-  "received_at",
   "site",
   "app",
   "user",
+  "team",
   "column_break_swwj",
   "properties"
  ],
@@ -19,7 +19,8 @@
    "fieldname": "event_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Event Name"
+   "label": "Event Name",
+   "search_index": 1
   },
   {
    "fieldname": "column_break_swwj",
@@ -28,12 +29,8 @@
   {
    "fieldname": "captured_at",
    "fieldtype": "Datetime",
-   "label": "Captured At"
-  },
-  {
-   "fieldname": "received_at",
-   "fieldtype": "Datetime",
-   "label": "Received At"
+   "label": "Captured At",
+   "search_index": 1
   },
   {
    "fieldname": "properties",
@@ -43,7 +40,8 @@
   {
    "fieldname": "site",
    "fieldtype": "Data",
-   "label": "Site"
+   "label": "Site",
+   "search_index": 1
   },
   {
    "fieldname": "app",
@@ -53,12 +51,17 @@
   {
    "fieldname": "user",
    "fieldtype": "Data",
-   "label": "User"
+   "label": "User",
+   "search_index": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "label": "Team"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
- "is_virtual": 1,
  "links": [],
  "modified": "2025-08-30 13:18:58.894643",
  "modified_by": "Administrator",
