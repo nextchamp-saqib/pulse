@@ -91,6 +91,88 @@ def _bulk_ingest(events):
 		frappe.throw("Failed to insert some events", frappe.ValidationError)
 
 
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def identify(user, properties=None):
+	check_auth()
+	try:
+		upsert_person(user, properties)
+	except Exception as e:
+		logger.error(
+			{
+				"request_ip": frappe.local.request_ip,
+				"identify": {"user": user},
+				"error": str(e),
+			}
+		)
+		raise e
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def alias(previous_id, user):
+	check_auth()
+	try:
+		upsert_alias(previous_id, user)
+	except Exception as e:
+		logger.error(
+			{
+				"request_ip": frappe.local.request_ip,
+				"alias": {"previous_id": previous_id, "user": user},
+				"error": str(e),
+			}
+		)
+		raise e
+
+
+def _merge_properties(existing, incoming):
+	"""Merge incoming attributes over existing (later values win, others kept)."""
+	if isinstance(existing, str):
+		existing = frappe.parse_json(existing)
+	if isinstance(incoming, str):
+		incoming = frappe.parse_json(incoming)
+	return {**(existing or {}), **(incoming or {})}
+
+
+def upsert_person(user, properties=None):
+	"""Create or update a Pulse Person profile, merging incoming attributes.
+
+	Profiles are mutable state (set on change), not append-only events — so a
+	later `identify` updates the given keys and keeps the rest.
+	"""
+	if not user:
+		frappe.throw("user is required", frappe.ValidationError)
+
+	if frappe.db.exists("Pulse Person", user):
+		doc = frappe.get_doc("Pulse Person", user)
+		doc.properties = _merge_properties(doc.properties, properties)
+		doc.save(ignore_permissions=True)
+	else:
+		doc = frappe.get_doc(
+			{"doctype": "Pulse Person", "user": user, "properties": _merge_properties({}, properties)}
+		)
+		doc.insert(ignore_permissions=True)
+	return doc
+
+
+def upsert_alias(previous_id, user):
+	"""Record that a previous (anonymous) user id maps to a known user.
+
+	Stores the mapping; re-attribution of historical events to `user` is resolved
+	downstream in Insights (events joined to this alias map at query time), the way
+	PostHog resolves merged persons. Pulse never rewrites historical event rows.
+	"""
+	if not previous_id or not user:
+		frappe.throw("previous_id and user are required", frappe.ValidationError)
+
+	if frappe.db.exists("Pulse Alias", previous_id):
+		doc = frappe.get_doc("Pulse Alias", previous_id)
+		doc.user = user
+		doc.save(ignore_permissions=True)
+	else:
+		doc = frappe.get_doc({"doctype": "Pulse Alias", "previous_id": previous_id, "user": user})
+		doc.insert(ignore_permissions=True)
+	return doc
+
+
 def check_auth():
 	api_key = frappe.get_single("Pulse Settings").get_password("api_key")
 	if not api_key:
