@@ -1,9 +1,4 @@
-import os
-
 import frappe
-import ibis
-from frappe.model.utils import is_virtual_doctype
-from frappe.utils import get_files_path
 
 from pulse.logger import get_logger
 
@@ -55,65 +50,3 @@ def pretty_bytes(size):
 		return f"{size / (1024**2):.2f} MB"
 	else:
 		return f"{size / (1024**3):.2f} GB"
-
-
-def get_etl_batch(doctype, checkpoint=None, batch_size=1000):
-	if is_virtual_doctype(doctype):
-		from frappe.model.base_document import get_controller
-
-		controller = get_controller(doctype)
-		if not hasattr(controller, "get_etl_batch"):
-			raise NotImplementedError
-
-		return frappe.call(controller.get_etl_batch, checkpoint=checkpoint, batch_size=batch_size)
-
-	creation_key, id_key = "creation", "name"
-	filters = None
-	if checkpoint:
-		filters = [[creation_key, ">", checkpoint]]
-
-	return frappe.get_all(
-		doctype,
-		fields=["*"],
-		filters=filters,
-		limit=batch_size,
-		order_by=f"{creation_key}, {id_key}",
-	)
-
-
-@log_error()
-def get_warehouse_connection(readonly=True):
-	db_path = get_db_path()
-	if not os.path.exists(db_path):
-		db = ibis.duckdb.connect(db_path)
-		db.disconnect()
-
-	conn = ibis.duckdb.connect(db_path, read_only=readonly, enable_external_access=False)
-	ensure_file_record(db_path)
-	return conn
-
-
-def get_db_path():
-	base = os.path.realpath(get_files_path(is_private=1))
-	return os.path.join(base, "warehouse.duckdb")
-
-
-def ensure_file_record(db_path):
-	if not os.path.exists(db_path):
-		return
-
-	if not frappe.db.exists("File", {"file_url": "/private/files/warehouse.duckdb"}):
-		size = os.path.getsize(db_path)
-		file_doc = frappe.get_doc(
-			{
-				"doctype": "File",
-				"file_name": "warehouse.duckdb",
-				"file_url": "/private/files/warehouse.duckdb",
-				"file_size": size,
-				"attached_to_doctype": "Pulse Settings",
-				"attached_to_name": "Pulse Settings",
-				"is_private": 1,
-			}
-		)
-		file_doc.db_insert()
-		frappe.db.commit()

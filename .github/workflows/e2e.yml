@@ -1,0 +1,113 @@
+name: E2E
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+    inputs:
+      frappe_branch:
+        description: "frappe branch to test against (carries the pulse client)"
+        required: false
+        default: improve-pulse-telemetry
+
+concurrency:
+  group: e2e-${{ github.event_name }}-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Telemetry pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Override here (or via workflow_dispatch) until the client lands in develop.
+      FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'improve-pulse-telemetry' }}
+
+    services:
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=2s --health-retries=10
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install yarn
+        run: npm install -g yarn
+
+      - name: Add test_site to hosts
+        run: echo "127.0.0.1 test_site" | sudo tee -a /etc/hosts
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Cache Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: ${{ runner.os }}-cypress
+
+      - name: Install (bench + frappe + pulse)
+        run: bash "${GITHUB_WORKSPACE}/.github/helper/install.sh"
+
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@latest
+
+      - name: Complete setup wizard
+        run: |
+          cd ~/frappe-bench
+          bench --site test_site execute frappe.utils.install.complete_setup_wizard
+
+      - name: Wait for site
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://test_site:8000/api/method/ping || true)
+            if [ "$code" = "200" ]; then echo "site up"; exit 0; fi
+            echo "waiting for site ($i)... [$code]"; sleep 3
+          done
+          echo "site did not come up"; exit 1
+
+      - name: Run e2e
+        id: e2e
+        run: |
+          cd ~/frappe-bench
+          CYPRESS_pulse_site=test_site \
+          bench --site test_site run-ui-tests pulse \
+            --headless \
+            --browser "$(which chrome)" \
+            --spec cypress/integration/pulse_telemetry.js
+
+      - name: Upload screenshots on failure
+        if: ${{ failure() && steps.e2e.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots
+          path: ~/frappe-bench/apps/pulse/cypress/screenshots
+          if-no-files-found: ignore
+
+      - name: Show logs
+        if: ${{ always() }}
+        run: |
+          cat ~/frappe-bench/bench_start.log || true
+          for f in ~/frappe-bench/logs/*.log; do
+            echo "=== $f ==="; cat "$f" || true
+          done
