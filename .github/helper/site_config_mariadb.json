@@ -1,0 +1,14 @@
+{
+	"db_host": "127.0.0.1",
+	"db_port": 3306,
+	"db_name": "test_frappe",
+	"db_password": "test_frappe",
+	"admin_password": "admin",
+	"root_login": "root",
+	"root_password": "root",
+	"host_name": "http://test_site:8000",
+	"pulse_host": "http://test_site:8000",
+	"pulse_api_key": "asdf1234",
+	"install_apps": ["pulse"],
+	"throttle_user_limit": 100
+}
