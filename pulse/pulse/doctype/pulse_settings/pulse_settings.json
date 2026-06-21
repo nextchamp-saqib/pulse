@@ -11,6 +11,7 @@
  ],
  "fields": [
   {
+   "description": "Public write-only ingest key. Browsers send it in the request body; server-to-server callers in the X-Pulse-API-Key header.",
    "fieldname": "api_key",
    "fieldtype": "Password",
    "label": "API Key"
@@ -31,7 +32,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-08-30 20:21:12.645927",
+ "modified": "2026-06-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Pulse Settings",
