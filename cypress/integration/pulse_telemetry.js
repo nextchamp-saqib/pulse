@@ -99,6 +99,11 @@ context("Pulse telemetry pipeline", () => {
 // or the X-Pulse-API-Key header (server-to-server). cy.request isn't browser-CORS-
 // enforced, so it can exercise the endpoint directly.
 context("Pulse ingest HTTP contract", () => {
+	// The browser ingests with credentials: "omit" (no cookies). The pipeline test
+	// above logs in, and testIsolation is off, so drop that session here — otherwise
+	// cy.request sends the cookie and the POST trips CSRF (400) before auth runs.
+	before(() => cy.clearCookies());
+
 	it("rejects ingest with a missing or wrong API key, accepts the right one", () => {
 		// Missing key -> PermissionError (403).
 		cy.request({
