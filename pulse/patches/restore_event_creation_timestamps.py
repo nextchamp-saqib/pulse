@@ -18,6 +18,7 @@ Idempotent: rewritten rows leave the window.
 """
 
 import frappe
+from frappe.utils import get_system_timezone
 
 # The migration's run window, in the instance's local time (IST). Clobbered
 # creations all fall inside it; the end is padded a little -- the receive-time
@@ -37,6 +38,12 @@ _RECV = "FROM_UNIXTIME(CAST(SUBSTRING_INDEX(name, '-', 1) AS DECIMAL(20, 3)) / 1
 
 
 def execute():
+	# The window bounds and +05:30 reconstruction below are specific to the affected
+	# IST instance. Refuse to run on any other timezone so a site that happens to have
+	# events in this wall-clock window can't be rewritten in the wrong local time.
+	if get_system_timezone() not in ("Asia/Kolkata", "Asia/Calcutta"):
+		return
+
 	if frappe.db.sql(
 		"SELECT 1 FROM `tabPulse Event` WHERE creation >= %s AND creation < %s LIMIT 1",
 		(CLOBBER_START, CLOBBER_END),
