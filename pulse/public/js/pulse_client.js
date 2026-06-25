@@ -16,10 +16,20 @@
 // `allow_cors`); there's nothing for the app to do per-request.
 
 const INGEST_PATH = "/api/method/pulse.api.bulk_ingest";
+const ANON_ID_KEY = "pulse:anon_id";
 
-function defaultContext() {
-	const t = (typeof window !== "undefined" && window.frappe?.boot?.telemetry) || {};
-	return { user: t.user, team: t.team };
+function bootTelemetry() {
+	return (typeof window !== "undefined" && window.frappe?.boot?.telemetry) || {};
+}
+
+function uuid() {
+	if (typeof crypto !== "undefined" && crypto.randomUUID) {
+		return crypto.randomUUID().replace(/-/g, "");
+	}
+	// Fallback for older browsers.
+	let s = "";
+	while (s.length < 32) s += Math.random().toString(16).slice(2);
+	return s.slice(0, 32);
 }
 
 export class PulseClient {
@@ -29,6 +39,8 @@ export class PulseClient {
 			apiKey,
 			site,
 			enabled = false,
+			user,
+			team,
 			getContext,
 			flushInterval = 10000,
 			maxQueueSize = 20,
@@ -39,7 +51,14 @@ export class PulseClient {
 		this.apiKey = apiKey;
 		this.site =
 			site || (typeof window !== "undefined" ? window.location?.hostname : undefined);
-		this.getContext = getContext || defaultContext;
+		// Resolved on every capture so a mid-session login is reflected. Explicit
+		// options win; otherwise fall back to desk's boot.telemetry.
+		this.getContext =
+			getContext ||
+			(() => {
+				const t = bootTelemetry();
+				return { user: user ?? t.user, team: team ?? t.team };
+			});
 		this.flushInterval = flushInterval;
 		this.maxQueueSize = maxQueueSize;
 		this.now = now || (() => new Date().toISOString());
@@ -47,6 +66,7 @@ export class PulseClient {
 		// Direct mode needs a host + key to send anything; without them stay off.
 		this.enabled = Boolean(enabled && this.host && this.apiKey);
 		this.eq = null;
+		this.anonId = null;
 		this.unloadAttached = false;
 	}
 
@@ -81,10 +101,36 @@ export class PulseClient {
 			app: app,
 			properties: props,
 			site: this.site,
-			user: user,
+			user: user || this._anonId(),
 			team: team,
 			captured_at: this.now(),
 		});
+	}
+
+	// The distinct id used on events: the host-supplied identity if there is one,
+	// else a per-browser anon id. Exposed so a signup handler can read it and
+	// alias() the visitor's pre-signup activity to the now-known user.
+	getDistinctId() {
+		return this.getContext()?.user || this._anonId();
+	}
+
+	// Minted once and persisted in localStorage, so a visitor is one stable identity
+	// across reloads until they're identified.
+	_anonId() {
+		if (this.anonId) return this.anonId;
+		try {
+			let id = window.localStorage.getItem(ANON_ID_KEY);
+			if (!id) {
+				id = "anon_" + uuid();
+				window.localStorage.setItem(ANON_ID_KEY, id);
+			}
+			this.anonId = id;
+		} catch {
+			// Storage unavailable (private mode / no window): a per-session id still
+			// beats collapsing every visitor onto one shared id.
+			this.anonId = "anon_" + uuid();
+		}
+		return this.anonId;
 	}
 
 	flush() {
