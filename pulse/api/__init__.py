@@ -42,6 +42,10 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, p
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def bulk_ingest(events, site=None):
+	# Browser sends events as a form field (JSON string); server-to-server sends a
+	# JSON body (already a list).
+	if isinstance(events, str):
+		events = frappe.parse_json(events)
 	if not isinstance(events, list):
 		frappe.throw("Events must be a list", frappe.ValidationError)
 
@@ -158,45 +162,76 @@ def upsert_alias(previous_id, user):
 	"""Record that a previous (anonymous) user id maps to a known user.
 
 	Stores the mapping; re-attribution of historical events to `user` is resolved
-	downstream in Insights (events joined to this alias map at query time), the way
-	PostHog resolves merged persons. Pulse never rewrites historical event rows.
+	downstream in Insights (events joined to this alias map at query time).
+	Pulse never rewrites historical event rows.
+
+	Merge guard: only an *anonymous* id may be merged into an identified one.
+	The endpoint accepts the public ingest key, so without this a caller could
+	re-point an established id or collapse two real identities. We therefore refuse
+	when either side is already an identity — leaving alias as an append-only anon→identified link.
 	"""
 	if not previous_id or not user:
 		frappe.throw("previous_id and user are required", frappe.ValidationError)
 
-	if frappe.db.exists("Pulse Alias", previous_id):
-		doc = frappe.get_doc("Pulse Alias", previous_id)
-		doc.user = user
-		doc.save(ignore_permissions=True)
-	else:
-		doc = frappe.get_doc({"doctype": "Pulse Alias", "previous_id": previous_id, "user": user})
-		doc.insert(ignore_permissions=True)
+	if previous_id == user:
+		return
+
+	existing = frappe.db.get_value("Pulse Alias", previous_id, "user")
+	if existing:
+		# Already linked: idempotent if to the same identity, refused otherwise
+		# (can't re-point an established alias to a different one).
+		if existing != user:
+			_refuse_merge(previous_id, user, reason="previous_id already mapped to another identity")
+		return
+
+	# `previous_id` must be anonymous: if it's itself an identity (has a profile, or
+	# is the target of another alias), merging it under `user` would collapse two
+	# identified persons.
+	if frappe.db.exists("Pulse Person", previous_id) or frappe.db.exists(
+		"Pulse Alias", {"user": previous_id}
+	):
+		_refuse_merge(previous_id, user, reason="previous_id is already an identified person")
+		return
+
+	doc = frappe.get_doc({"doctype": "Pulse Alias", "previous_id": previous_id, "user": user})
+	doc.insert(ignore_permissions=True)
 	return doc
 
 
+def _refuse_merge(previous_id, user, reason):
+	logger.warning(
+		{
+			"request_ip": getattr(frappe.local, "request_ip", None),
+			"refused_merge": {"previous_id": previous_id, "user": user},
+			"reason": reason,
+		}
+	)
+
+
 def check_auth():
-	api_key = frappe.get_single("Pulse Settings").get_password("api_key")
+	api_key = frappe.get_single("Pulse Settings").get_password("api_key", raise_exception=False)
 	if not api_key:
 		logger.error("Pulse API key is not configured")
 		frappe.throw("Pulse API key is not configured", frappe.PermissionError)
 
-	headers = frappe.request.headers
-	header_name = "X-Pulse-API-Key"
-	req_api_key = headers.get(header_name)
+	# Browser-direct ingest sends the key in the form body (so the request stays a
+	# preflight-free "simple" CORS request); server-to-server callers send the
+	# X-Pulse-API-Key header.
+	req_api_key = frappe.request.headers.get("X-Pulse-API-Key") or frappe.form_dict.get("api_key")
 	if not req_api_key:
 		logger.error(
 			{
 				"request_ip": frappe.local.request_ip,
-				"error": f"{header_name} header is missing",
+				"error": "API key is missing",
 			}
 		)
-		frappe.throw(f"{header_name} header is missing", frappe.PermissionError)
+		frappe.throw("API key is missing", frappe.PermissionError)
 
 	if req_api_key != api_key:
 		logger.error(
 			{
 				"request_ip": frappe.local.request_ip,
-				"error": f"Invalid {header_name}",
+				"error": "Invalid API key",
 			}
 		)
-		frappe.throw(f"Invalid {header_name}", frappe.PermissionError)
+		frappe.throw("Invalid API key", frappe.PermissionError)
