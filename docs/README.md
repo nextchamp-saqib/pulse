@@ -93,8 +93,8 @@ from a browser. From here the team exists and rides on every later event.
 ### 3. The site
 
 `myerpnext.frappe.cloud`. At provisioning the team id is written into the site's
-config, and the telemetry layer stamps it on every event — from both clients, with no
-lookup needed.
+config as `fc_team`, and the telemetry layer stamps it on every event — from both
+clients, with no lookup needed.
 
 Two clients send events: same shape, different vantage points.
 
@@ -141,7 +141,7 @@ Neither is sent — both are computed from the events above.
 | ------------- | -------------- | -------------------------------------------------- |
 | site config   | `pulse_api_key`| public, write-only ingest key                      |
 | site config   | `pulse_host`   | ingest host (default `https://pulse.m.frappe.cloud`) |
-| site config   | `pulse_team`   | team id, written at provisioning; stamped on events |
+| site config   | `fc_team`      | team id, written at provisioning; stamped on events |
 | browser / SPA | `boot_config()`| serves the client its host, key, site, user, team  |
 
 Telemetry stays off unless a key is set and telemetry is enabled; a disabled site
