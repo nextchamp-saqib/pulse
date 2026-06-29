@@ -44,7 +44,10 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, p
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def bulk_ingest(events, site=None):
 	# Browser sends events as a form field (JSON string); server-to-server sends a
-	# JSON body (already a list).
+	# JSON body (already a list). That transport shape *is* the browser-direct signal:
+	# only the browser path derives an anonymous `user`, and unlike "which header holds
+	# the key" it can't be confused by a server caller — s2s always sends a list.
+	browser_direct = isinstance(events, str)
 	if isinstance(events, str):
 		events = frappe.parse_json(events)
 	if not isinstance(events, list):
@@ -54,10 +57,6 @@ def bulk_ingest(events, site=None):
 	# `site` sent by the client; until the client sends it, fall back to the batch
 	# (single-site, since the client's event queue is site-namespaced).
 	frappe.form_dict["site"] = site or (events[0].get("site") if events else None)
-
-	# Browser-direct iff the key is in the body, not the X-Pulse-API-Key header (a
-	# browser can't set that header without a CORS preflight). Only those derive a user.
-	browser_direct = not frappe.request.headers.get("X-Pulse-API-Key")
 	_bulk_ingest(events, browser_direct)
 
 
