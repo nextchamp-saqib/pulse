@@ -1,6 +1,7 @@
 import frappe
 from frappe.rate_limiter import rate_limit
 
+from pulse.anon import derive_anon_user
 from pulse.logger import get_logger
 from pulse.pulse.doctype.pulse_event.pulse_event import enqueue_event
 
@@ -43,7 +44,10 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, p
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def bulk_ingest(events, site=None):
 	# Browser sends events as a form field (JSON string); server-to-server sends a
-	# JSON body (already a list).
+	# JSON body (already a list). That transport shape *is* the browser-direct signal:
+	# only the browser path derives an anonymous `user`, and unlike "which header holds
+	# the key" it can't be confused by a server caller — s2s always sends a list.
+	browser_direct = isinstance(events, str)
 	if isinstance(events, str):
 		events = frappe.parse_json(events)
 	if not isinstance(events, list):
@@ -53,12 +57,13 @@ def bulk_ingest(events, site=None):
 	# `site` sent by the client; until the client sends it, fall back to the batch
 	# (single-site, since the client's event queue is site-namespaced).
 	frappe.form_dict["site"] = site or (events[0].get("site") if events else None)
-	_bulk_ingest(events)
+	_bulk_ingest(events, browser_direct)
 
 
 @rate_limit(key="site", limit=get_rate_limit, seconds=60)
-def _bulk_ingest(events):
+def _bulk_ingest(events, browser_direct):
 	check_auth()
+	_resolve_anonymous_users(events, browser_direct)
 	failed = []
 	for event in events:
 		try:
@@ -94,6 +99,36 @@ def _bulk_ingest(events):
 			}
 		)
 		frappe.throw("Failed to insert some events", frappe.ValidationError)
+
+
+def _resolve_anonymous_users(events, browser_direct):
+	"""Fill the anonymous `user` for browser-direct events that arrive without one.
+
+	A cookieless client sends no `user`; we derive it from the request. Events that
+	already carry one — a login's `user_…` or a `client`-mode minted `anon_…` — are
+	left as-is, so stages 2-4 and the opt-out need no declaration. Server-to-server
+	(not browser-direct) always supplies a `user`, so it returns early.
+	"""
+	if not browser_direct:
+		return
+	for event in events:
+		# Skip events without a site: deriving would need one, and a siteless event
+		# shouldn't fail the batch — leave its `user` empty.
+		if not event.get("user") and event.get("site"):
+			event["user"] = derive_anon_user(event["site"])
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=get_rate_limit, seconds=60)
+def anon_id(site=None):
+	"""Return this visitor's current-day cookieless id (for `getDistinctId()`).
+
+	The client can't compute it (the salt is server-side). It matches what the ingest
+	path derives for this visitor's events, so a forwarded `aid` stitches via `alias()`.
+	Rate-limited per IP (the real browser here) to cap enumeration of the derive oracle.
+	"""
+	check_auth()
+	return {"anon_id": derive_anon_user(site)}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

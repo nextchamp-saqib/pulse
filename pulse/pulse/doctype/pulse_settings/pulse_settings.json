@@ -7,7 +7,9 @@
  "field_order": [
   "api_key",
   "rate_limit",
-  "max_stream_length"
+  "max_stream_length",
+  "anon_salt",
+  "anon_salt_day"
  ],
  "fields": [
   {
@@ -26,13 +28,29 @@
    "fieldname": "max_stream_length",
    "fieldtype": "Int",
    "label": "Max Stream Length"
+  },
+  {
+   "description": "Server-managed rotating salt for cookieless anonymous ids. Rotates every UTC day; the previous value is overwritten and not recoverable. Do not edit.",
+   "fieldname": "anon_salt",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Anonymous Salt",
+   "read_only": 1
+  },
+  {
+   "description": "UTC date (YYYY-MM-DD) the current Anonymous Salt was generated for.",
+   "fieldname": "anon_salt_day",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Anonymous Salt Day",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-20 00:00:00.000000",
+ "modified": "2026-06-29 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Pulse Settings",

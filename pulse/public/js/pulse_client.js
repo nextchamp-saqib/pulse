@@ -16,7 +16,12 @@
 // `allow_cors`); there's nothing for the app to do per-request.
 
 const INGEST_PATH = "/api/method/pulse.api.bulk_ingest";
+const ANON_ID_PATH = "/api/method/pulse.api.anon_id";
 const ANON_ID_KEY = "pulse:anon_id";
+
+// anonymousMode: "cookieless" (default) writes nothing to the browser — the host
+// derives the id (pulse/anon.py). "client" mints a persistent localStorage anon id.
+const MODE_COOKIELESS = "cookieless";
 
 function bootTelemetry() {
 	return (typeof window !== "undefined" && window.frappe?.boot?.telemetry) || {};
@@ -42,10 +47,14 @@ export class PulseClient {
 			user,
 			team,
 			getContext,
+			anonymousMode,
 			flushInterval = 10000,
 			maxQueueSize = 20,
 			now,
 		} = options;
+
+		// Explicit option wins, else boot.telemetry, else the cookieless default.
+		this.anonymousMode = anonymousMode || bootTelemetry().anonymous_mode || MODE_COOKIELESS;
 
 		this.host = (host || "").replace(/\/+$/, "");
 		this.apiKey = apiKey;
@@ -66,8 +75,14 @@ export class PulseClient {
 		// Direct mode needs a host + key to send anything; without them stay off.
 		this.enabled = Boolean(enabled && this.host && this.apiKey);
 		this.eq = null;
+		// client mode: localStorage-minted id. cookieless: host-derived id, memory-only.
 		this.anonId = null;
+		this.anonIdPromise = null;
 		this.unloadAttached = false;
+	}
+
+	_isCookieless() {
+		return this.anonymousMode === MODE_COOKIELESS;
 	}
 
 	// Kept for API compatibility with the old relay client (callers awaited it).
@@ -89,6 +104,9 @@ export class PulseClient {
 			maxQueueSize: this.maxQueueSize,
 		});
 		this._attachUnload();
+		// Cookieless: warm the derived id so getDistinctId()/`aid` forwarding is ready.
+		// Skip when a user is already known — the anon id would go unused.
+		if (this._isCookieless() && !this.getContext()?.user) this._fetchAnonId();
 	}
 
 	capture(event_name, app, props) {
@@ -101,17 +119,47 @@ export class PulseClient {
 			app: app,
 			properties: props,
 			site: this.site,
-			user: user || this._anonId(),
+			// Cookieless: no anon id (the host derives it at ingest); a known user wins.
+			user: user || (this._isCookieless() ? undefined : this._anonId()),
 			team: team,
 			captured_at: this.now(),
 		});
 	}
 
-	// The distinct id used on events: the host-supplied identity if there is one,
-	// else a per-browser anon id. Exposed so a signup handler can read it and
-	// alias() the visitor's pre-signup activity to the now-known user.
+	// The distinct id on events: the known identity, else the anonymous id. Exposed so
+	// a signup handler can alias() the visitor's pre-signup activity to the new user.
 	getDistinctId() {
-		return this.getContext()?.user || this._anonId();
+		const user = this.getContext()?.user;
+		if (user) return user;
+		if (this._isCookieless()) {
+			// Derived host-side (the salt isn't in the browser); start() warms it.
+			// Returns "" until the fetch resolves — a brief window where `aid` is empty.
+			if (!this.anonId) this._fetchAnonId();
+			return this.anonId || "";
+		}
+		return this._anonId();
+	}
+
+	// Cookieless: fetch this visitor's derived id from the host — the same value the
+	// ingest path stamps on its events, so a forwarded `aid` lines up for alias().
+	_fetchAnonId() {
+		if (this.anonIdPromise) return this.anonIdPromise;
+		const body = new URLSearchParams({ site: this.site, api_key: this.apiKey });
+		this.anonIdPromise = fetch(`${this.host}${ANON_ID_PATH}`, {
+			method: "POST",
+			credentials: "omit",
+			body: body,
+		})
+			.then((r) => (r.ok ? r.json() : null))
+			.then((d) => {
+				this.anonId = d?.message?.anon_id || null;
+				return this.anonId;
+			})
+			.catch(() => null)
+			.finally(() => {
+				this.anonIdPromise = null;
+			});
+		return this.anonIdPromise;
 	}
 
 	// Minted once and persisted in localStorage, so a visitor is one stable identity

@@ -9,7 +9,7 @@ on:
       frappe_branch:
         description: "frappe branch to test against (carries the pulse client)"
         required: false
-        default: improve-pulse-telemetry
+        default: develop
 
 concurrency:
   group: e2e-${{ github.event_name }}-${{ github.event.number || github.ref }}
@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # Override here (or via workflow_dispatch) until the client lands in develop.
-      FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'improve-pulse-telemetry' }}
+      # Defaults to develop; override via workflow_dispatch to test another frappe branch.
+      FRAPPE_BRANCH: ${{ github.event.inputs.frappe_branch || 'develop' }}
 
     services:
       mariadb:

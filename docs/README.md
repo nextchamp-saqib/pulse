@@ -12,10 +12,10 @@ spec: event names and milestones are illustrative.
 
 - [Model](#model)
 - [The flow](#the-flow)
-  - [1. Product website](#1-product-website)
-  - [2. Signup](#2-signup)
-  - [3. The site](#3-the-site)
-  - [4. Activation and retention](#4-activation-and-retention)
+    - [1. Product website](#1-product-website)
+    - [2. Signup](#2-signup)
+    - [3. The site](#3-the-site)
+    - [4. Activation and retention](#4-activation-and-retention)
 - [Configuration](#configuration)
 - [APIs](#apis)
 - [Internals](#internals)
@@ -35,15 +35,46 @@ One distinction is worth stating up front: you **send events**, and you **derive
 funnels, activation, and retention. The latter are not events; they are questions
 asked of the event history.
 
+### A note on `user` scope
+
+`user` is **scope-dependent**, and the same column name carries three different
+kinds of id over the lifecycle:
+
+- `anon_…` — a browser, on the marketing site
+- `user_…` — the FC account user, minted at signup (`identify`/`alias` target)
+- `user_…` — a **per-site-salted** hash of the site user, on each site
+
+The last two render identically but are **not comparable**: the salt is per-site by
+design (privacy/tenancy — a person id never leaves a site in a cross-site-linkable
+form), so the same human is a different `user_…` on every site, and the account
+`user_…` you `identify()` at signup never appears on the site at all. The two are
+linked only by `team`.
+
+Two consequences for anyone querying events:
+
+- The safe key for site-scoped, per-person analysis is **`(site, user)`** — `site`
+  is on every event. A bare `COUNT(DISTINCT user)` across sites silently counts
+  *human × site*, not humans.
+- **`team` is the only identity stable across stages.** Anonymous → signup → site
+  activity is joined on `team`, never on `user`. Make `team` the cross-stage join;
+  treat `user` as valid only within a single `site`.
+
+`team` and `user` aren't in tension — they're orthogonal axes (the account vs. the
+actor within it). The only hazard is reading a site-scoped `user` as if it were
+global; key by `(site, user)` and join cross-stage on `team` and it goes away.
+
 ## The flow
 
 ### 1. Product website
 
 `frappe.io`, `erpnext.com`, and the like. Visitors are anonymous.
 
-The browser client is loaded once and given a public, write-only key. With no user in
-its config it mints an `anon_…` id and persists it in localStorage, so a browser stays
-one person across visits:
+The browser client is loaded once and given a public, write-only key. By default it
+runs **cookieless** (the Plausible model): it writes **nothing** to the browser and
+mints no id. With no user in its config it sends events with no `user`, and the host
+derives one at ingest as `sha256(daily_salt + site + ip + user_agent)`, where
+`daily_salt` is a server-side secret that rotates every UTC day and the previous day's
+salt is discarded:
 
 ```js
 import { PulseClient } from "https://pulse.m.frappe.cloud/assets/pulse/js/pulse_client.js";
@@ -60,9 +91,19 @@ pulse.capture("pricing_viewed", "website", { plan: "erpnext" });
 ```
 
 ```
-pageview        user=anon_9f2c   team=—
-pricing_viewed  user=anon_9f2c   team=—
+pageview        user=anon_3f1b…   team=—
+pricing_viewed  user=anon_3f1b…   team=—
 ```
+
+So a visitor is one stable id *within* a UTC day and a different id the next —
+cross-day anonymous attribution is intentionally dropped. Same-session signup still
+stitches: `getDistinctId()` returns the current day's derived id, so the click-time
+`aid` forward (below) carries it into `alias()` unchanged.
+
+**Stored-id mode (opt-out: `anonymous_mode: "client"`).** A site that needs a browser
+to stay one identity *across* days can instead mint a persistent `anon_…` id in
+localStorage — at the cost of the storage consent it needs in most jurisdictions,
+which is why cookieless is the default. Stages 2–4 are identical in both modes.
 
 ### 2. Signup
 
@@ -137,24 +178,25 @@ Neither is sent — both are computed from the events above.
 
 ## Configuration
 
-| Where         | Setting        | Purpose                                            |
-| ------------- | -------------- | -------------------------------------------------- |
-| site config   | `pulse_api_key`| public, write-only ingest key                      |
-| site config   | `pulse_host`   | ingest host (default `https://pulse.m.frappe.cloud`) |
-| site config   | `fc_team`      | team id, written at provisioning; stamped on events |
-| browser / SPA | `boot_config()`| serves the client its host, key, site, user, team  |
+| Where         | Setting          | Purpose                                                         |
+| ------------- | ---------------- | --------------------------------------------------------------- |
+| site config   | `pulse_api_key`  | public, write-only ingest key                                   |
+| site config   | `pulse_host`     | ingest host (default `https://pulse.m.frappe.cloud`)            |
+| site config   | `fc_team`        | team id, written at provisioning; stamped on events             |
+| site config   | `anonymous_mode` | `cookieless` (default) or `client` — anonymous id strategy (§1) |
+| browser / SPA | `boot_config()`  | serves the client its host, key, site, user, team               |
 
 Telemetry stays off unless a key is set and telemetry is enabled; a disabled site
 hands the browser nothing.
 
 ## APIs
 
-| Call                                  | Side             | Does                                          |
-| ------------------------------------- | ---------------- | --------------------------------------------- |
-| `capture(event, app, properties, …)`  | browser + server | record an event                              |
-| `identify(user, properties)`          | server only      | set/merge attributes on a person             |
-| `alias(previous_id, user)`            | server only      | record that an anonymous id is a known person |
-| `boot_config()`                       | server (guest)   | hand the browser its client config           |
+| Call                                 | Side             | Does                                          |
+| ------------------------------------ | ---------------- | --------------------------------------------- |
+| `capture(event, app, properties, …)` | browser + server | record an event                               |
+| `identify(user, properties)`         | server only      | set/merge attributes on a person              |
+| `alias(previous_id, user)`           | server only      | record that an anonymous id is a known person |
+| `boot_config()`                      | server (guest)   | hand the browser its client config            |
 
 `alias` only ever merges an **anonymous** id into a known one; it refuses to collapse
 two already-known identities.
@@ -172,7 +214,11 @@ Brief notes — the code docstrings carry the detail.
   retry/backoff; the browser client batches and flushes on an interval and on page
   hide.
 - **Anonymization.** `user_…` is a per-site-salted SHA-256 of the user. Standard users
-  (Guest, Administrator) are never sent — a guest falls back to the client's `anon_…`
-  id.
+  (Guest, Administrator) are never sent. By default (`anonymous_mode: "cookieless"`) the
+  anonymous `user` is derived at ingest from `daily_salt + site + ip + user_agent` — no
+  client id, no storage. The salt is global to the Pulse server and rotates daily, but
+  `site` is in the hash, so the same browser is still a distinct id per site and per day
+  (`pulse/anon.py`). Under the opt-out `client` mode a guest instead falls back to a
+  browser-minted `anon_…` id.
 - **Id namespaces.** `anon_…` (client-minted, per browser) · `user_…` (server, per
   site) · `team_…` (account).
