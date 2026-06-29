@@ -88,9 +88,9 @@ bench --site $SITE execute pulse.e2e.cleanup
 ```
 
 CI runs the e2e on every PR (`.github/workflows/e2e.yml`). The framework-side
-telemetry changes (boot config + direct-mode provider in `pulse.js`) currently live
-on frappe's `improve-pulse-telemetry` branch, so CI installs that via
-`FRAPPE_BRANCH` — switch it to `develop` once they merge.
+telemetry changes (boot config + direct-mode provider in `pulse.js`) live on frappe's
+`develop` branch, which CI installs via `FRAPPE_BRANCH` (override with
+`workflow_dispatch` to test against another branch).
 
 ### Contributing
 

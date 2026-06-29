@@ -2,12 +2,11 @@
 # Bootstraps a frappe-bench in CI with frappe (the telemetry client) + pulse on a
 # single self-hosting test_site, ready for the Cypress e2e.
 #
-# FRAPPE_BRANCH selects the frappe branch to install. The pulse telemetry client
-# currently lives on `improve-pulse-telemetry`; switch this to `develop` once it
-# merges.
+# FRAPPE_BRANCH selects the frappe branch to install (it carries the pulse
+# telemetry client). Defaults to `develop`.
 set -e
 
-FRAPPE_BRANCH="${FRAPPE_BRANCH:-improve-pulse-telemetry}"
+FRAPPE_BRANCH="${FRAPPE_BRANCH:-develop}"
 FRAPPE_USER="${FRAPPE_USER:-frappe}"
 
 cd ~ || exit
