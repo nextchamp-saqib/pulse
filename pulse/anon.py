@@ -82,9 +82,12 @@ def derive_anon_user(site: str | None) -> str:
 	"""Derive this request's cookieless ``user`` from salt + site + ip + ua.
 
 	The ``anon_id`` endpoint and the ingest path derive identically, so a visitor's
-	forwarded ``aid`` matches the ``user`` stored on its events.
+	forwarded ``aid`` matches the ``user`` stored on its events. ``site`` is required —
+	it scopes identity, and a missing one would yield an id no real event matches.
 	"""
+	if not site:
+		frappe.throw("site is required", frappe.ValidationError)
 	ip = getattr(frappe.local, "request_ip", None) or ""
 	ua = frappe.get_request_header("User-Agent") or ""
-	raw = "|".join((daily_salt(), site or "", ip, ua))
+	raw = "|".join((daily_salt(), site, ip, ua))
 	return ANON_PREFIX + hashlib.sha256(raw.encode("utf-8")).hexdigest()

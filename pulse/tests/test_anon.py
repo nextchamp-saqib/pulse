@@ -106,6 +106,20 @@ class IntegrationTestAnon(IntegrationTestCase):
 		self.assertEqual(events[1]["user"], "user_7c1d")  # stages 2-4 untouched
 		self.assertEqual(events[2]["user"], "anon_minted")  # `client` opt-out untouched
 
+	def test_derive_requires_site(self):
+		# A missing site would yield a degenerate id no real event matches.
+		with _request():
+			for missing in (None, ""):
+				with self.assertRaises(frappe.ValidationError):
+					anon.derive_anon_user(missing)
+
+	def test_siteless_event_is_left_alone(self):
+		# Browser-direct but no site: skipped, not given a degenerate id (or a failure).
+		events = [{"event_name": "pageview"}]
+		with _request():
+			_resolve_anonymous_users(events, browser_direct=True)
+		self.assertNotIn("user", events[0])
+
 	def test_server_to_server_never_derives(self):
 		# s2s sends the X-Pulse-API-Key header (browser_direct=False) and always
 		# supplies a user, so an empty-user event is left as-is rather than derived.

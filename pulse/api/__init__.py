@@ -113,17 +113,20 @@ def _resolve_anonymous_users(events, browser_direct):
 	if not browser_direct:
 		return
 	for event in events:
-		if not event.get("user"):
-			event["user"] = derive_anon_user(event.get("site"))
+		# Skip events without a site: deriving would need one, and a siteless event
+		# shouldn't fail the batch — leave its `user` empty.
+		if not event.get("user") and event.get("site"):
+			event["user"] = derive_anon_user(event["site"])
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=get_rate_limit, seconds=60)
 def anon_id(site=None):
 	"""Return this visitor's current-day cookieless id (for `getDistinctId()`).
 
 	The client can't compute it (the salt is server-side). It matches what the ingest
 	path derives for this visitor's events, so a forwarded `aid` stitches via `alias()`.
-	The response is only the caller's own id (keyed on its IP + UA).
+	Rate-limited per IP (the real browser here) to cap enumeration of the derive oracle.
 	"""
 	check_auth()
 	return {"anon_id": derive_anon_user(site)}
