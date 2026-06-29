@@ -14,6 +14,8 @@ class PulseSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		anon_salt: DF.Data | None
+		anon_salt_day: DF.Data | None
 		api_key: DF.Password | None
 		max_stream_length: DF.Int
 		rate_limit: DF.Int
