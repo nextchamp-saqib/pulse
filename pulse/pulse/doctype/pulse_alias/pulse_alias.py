@@ -14,7 +14,7 @@ class PulseAlias(Document):
 		from frappe.types import DF
 
 		previous_id: DF.Data
-		user: DF.Data
+		team: DF.Data
 	# end: auto-generated types
 
 	pass

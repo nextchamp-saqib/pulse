@@ -7,7 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "previous_id",
-  "user"
+  "team"
  ],
  "fields": [
   {
@@ -19,10 +19,10 @@
    "unique": 1
   },
   {
-   "fieldname": "user",
+   "fieldname": "team",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "User",
+   "label": "Team",
    "reqd": 1
   }
  ],

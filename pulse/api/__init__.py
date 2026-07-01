@@ -132,15 +132,15 @@ def anon_id(site=None):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def identify(user, properties=None):
+def identify(team, properties=None):
 	check_auth()
 	try:
-		upsert_person(user, properties)
+		upsert_team(team, properties)
 	except Exception as e:
 		logger.error(
 			{
 				"request_ip": frappe.local.request_ip,
-				"identify": {"user": user},
+				"identify": {"team": team},
 				"error": str(e),
 			}
 		)
@@ -148,15 +148,15 @@ def identify(user, properties=None):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def alias(previous_id, user):
+def alias(previous_id, team):
 	check_auth()
 	try:
-		upsert_alias(previous_id, user)
+		upsert_alias(previous_id, team)
 	except Exception as e:
 		logger.error(
 			{
 				"request_ip": frappe.local.request_ip,
-				"alias": {"previous_id": previous_id, "user": user},
+				"alias": {"previous_id": previous_id, "team": team},
 				"error": str(e),
 			}
 		)
@@ -172,72 +172,73 @@ def _merge_properties(existing, incoming):
 	return {**(existing or {}), **(incoming or {})}
 
 
-def upsert_person(user, properties=None):
-	"""Create or update a Pulse Person profile, merging incoming attributes.
+def upsert_team(team, properties=None):
+	"""Create or update a Pulse Team profile, merging incoming attributes.
 
-	Profiles are mutable state (set on change), not append-only events — so a
-	later `identify` updates the given keys and keeps the rest.
+	The profile is keyed on the account `team`. Profiles are mutable state (set on
+	change), not append-only events — so a later `identify` updates the given keys
+	and keeps the rest.
 	"""
-	if not user:
-		frappe.throw("user is required", frappe.ValidationError)
+	if not team:
+		frappe.throw("team is required", frappe.ValidationError)
 
-	if frappe.db.exists("Pulse Person", user):
-		doc = frappe.get_doc("Pulse Person", user)
+	if frappe.db.exists("Pulse Team", team):
+		doc = frappe.get_doc("Pulse Team", team)
 		doc.properties = _merge_properties(doc.properties, properties)
 		doc.save(ignore_permissions=True)
 	else:
 		doc = frappe.get_doc(
-			{"doctype": "Pulse Person", "user": user, "properties": _merge_properties({}, properties)}
+			{"doctype": "Pulse Team", "team": team, "properties": _merge_properties({}, properties)}
 		)
 		doc.insert(ignore_permissions=True)
 	return doc
 
 
-def upsert_alias(previous_id, user):
-	"""Record that a previous (anonymous) user id maps to a known user.
+def upsert_alias(previous_id, team):
+	"""Record that a previous (anonymous) id maps to a known account team.
 
-	Stores the mapping; re-attribution of historical events to `user` is resolved
-	downstream in Insights (events joined to this alias map at query time).
-	Pulse never rewrites historical event rows.
+	Stores the mapping; re-attribution of historical events is resolved downstream in
+	Insights (events joined to this alias map at query time). Pulse never rewrites
+	historical event rows.
 
 	Merge guard: only an *anonymous* id may be merged into an identified one.
 	The endpoint accepts the public ingest key, so without this a caller could
 	re-point an established id or collapse two real identities. We therefore refuse
-	when either side is already an identity — leaving alias as an append-only anon→identified link.
+	when either side is already an identity — leaving alias as an append-only anon→team link.
 	"""
-	if not previous_id or not user:
-		frappe.throw("previous_id and user are required", frappe.ValidationError)
+	if not previous_id or not team:
+		frappe.throw("previous_id and team are required", frappe.ValidationError)
 
-	if previous_id == user:
+	if previous_id == team:
 		return
 
-	existing = frappe.db.get_value("Pulse Alias", previous_id, "user")
+	existing = frappe.db.get_value("Pulse Alias", previous_id, "team")
 	if existing:
 		# Already linked: idempotent if to the same identity, refused otherwise
 		# (can't re-point an established alias to a different one).
-		if existing != user:
-			_refuse_merge(previous_id, user, reason="previous_id already mapped to another identity")
+		if existing != team:
+			_refuse_merge(previous_id, team, reason="previous_id already mapped to another identity")
 		return
 
 	# `previous_id` must be anonymous: if it's itself an identity (has a profile, or
-	# is the target of another alias), merging it under `user` would collapse two
-	# identified persons.
-	if frappe.db.exists("Pulse Person", previous_id) or frappe.db.exists(
-		"Pulse Alias", {"user": previous_id}
+	# is the target of another alias), merging it under `team` would collapse two
+	# identified subjects.
+	if frappe.db.exists("Pulse Team", previous_id) or frappe.db.exists(
+		"Pulse Alias", {"team": previous_id}
 	):
-		_refuse_merge(previous_id, user, reason="previous_id is already an identified person")
+		_refuse_merge(previous_id, team, reason="previous_id is already an identified team")
 		return
 
-	doc = frappe.get_doc({"doctype": "Pulse Alias", "previous_id": previous_id, "user": user})
+	doc = frappe.get_doc({"doctype": "Pulse Alias", "previous_id": previous_id, "team": team})
 	doc.insert(ignore_permissions=True)
 	return doc
 
 
-def _refuse_merge(previous_id, user, reason):
+def _refuse_merge(previous_id, team, reason):
 	logger.warning(
 		{
 			"request_ip": getattr(frappe.local, "request_ip", None),
-			"refused_merge": {"previous_id": previous_id, "user": user},
+			"refused_merge": {"previous_id": previous_id, "team": team},
 			"reason": reason,
 		}
 	)
