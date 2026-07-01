@@ -27,6 +27,7 @@ import frappe
 from frappe.utils.synchronization import filelock
 
 ANON_PREFIX = "anon_"
+ANON_ID_LENGTH = 16
 
 # Per-worker cache of the day's salt, keyed by UTC day. The salt of record lives in
 # Pulse Settings; this spares a DB read per derive and misses once per worker per day.
@@ -90,4 +91,5 @@ def derive_anon_user(site: str | None) -> str:
 	ip = getattr(frappe.local, "request_ip", None) or ""
 	ua = frappe.get_request_header("User-Agent") or ""
 	raw = "|".join((daily_salt(), site, ip, ua))
-	return ANON_PREFIX + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+	digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+	return ANON_PREFIX + digest[:ANON_ID_LENGTH]
