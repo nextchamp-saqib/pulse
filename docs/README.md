@@ -22,46 +22,29 @@ spec: event names and milestones are illustrative.
 
 ## Model
 
-Every event carries two ids:
+The **identity subject is the team** (a Frappe Cloud account) — stable for the
+account's whole life, across its sites, apps, and members. `identify` and `alias`
+target the team, and funnels, activation, and retention are all computed on it.
 
-- **`user`** — one person. Anonymous visitors get a client-minted `anon_…` id; known
-  users get `user_…`, a salted hash of the account user (never the raw email).
-- **`team`** — the account (a Frappe Cloud team). Stable for the account's whole life.
+Every event carries:
 
-A person's `user` id changes as they move between contexts — a marketing site, the
-signup app, their own site. `team` does not. Cross-stage analysis is done on `team`.
+- **`team`** — the account. The identity. Stamped on every event from `fc_team`.
+- **`user`** — a non-identifying *operator* dimension: which actor generated the
+  event, pseudonymized per-site (`user_…`), or a client `anon_…` before signup.
+  Never joined across sites or stages — that's the team's job. Treat it as valid
+  only within a single `site` (`COUNT(DISTINCT user)` across sites counts
+  *human × site*, not humans).
+
+Before an account exists a visitor is anonymous (`anon_…`); at signup the one
+identity link is made — `alias(anon → team)` — and from then on every event carries
+the team with no further stitching. Because the subject is the team, it doesn't
+matter which member (or which email) triggers a later `identify`, or that one
+session can act across teams: each event already carries its own `team`, and every
+`identify` converges on it.
 
 One distinction is worth stating up front: you **send events**, and you **derive**
 funnels, activation, and retention. The latter are not events; they are questions
 asked of the event history.
-
-### A note on `user` scope
-
-`user` is **scope-dependent**, and the same column name carries three different
-kinds of id over the lifecycle:
-
-- `anon_…` — a browser, on the marketing site
-- `user_…` — the FC account user, minted at signup (`identify`/`alias` target)
-- `user_…` — a **per-site-salted** hash of the site user, on each site
-
-The last two render identically but are **not comparable**: the salt is per-site by
-design (privacy/tenancy — a person id never leaves a site in a cross-site-linkable
-form), so the same human is a different `user_…` on every site, and the account
-`user_…` you `identify()` at signup never appears on the site at all. The two are
-linked only by `team`.
-
-Two consequences for anyone querying events:
-
-- The safe key for site-scoped, per-person analysis is **`(site, user)`** — `site`
-  is on every event. A bare `COUNT(DISTINCT user)` across sites silently counts
-  *human × site*, not humans.
-- **`team` is the only identity stable across stages.** Anonymous → signup → site
-  activity is joined on `team`, never on `user`. Make `team` the cross-stage join;
-  treat `user` as valid only within a single `site`.
-
-`team` and `user` aren't in tension — they're orthogonal axes (the account vs. the
-actor within it). The only hazard is reading a site-scoped `user` as if it were
-global; key by `(site, user)` and join cross-stage on `team` and it goes away.
 
 ## The flow
 
@@ -118,15 +101,14 @@ On submit, Frappe Cloud creates a user and a team, then stitches and labels the 
 identity from the server:
 
 ```python
-from frappe.utils.telemetry.pulse.client import alias, identify
+from press.utils.telemetry import pulse_alias, pulse_identify
 
-alias(previous_id=anon_id, user=user_id)                    # same person
-identify(user_id, {"plan": "trial", "product": "erpnext"})  # facts about them
+pulse_alias(previous_id=anon_id, team=team_id)                    # same account
+pulse_identify(team_id, {"plan": "trial", "product": "erpnext"})  # facts about it
 ```
 
-- **`alias`** links two ids — the anonymous browsing above is now attributed to
-  `user_id`.
-- **`identify`** attaches attributes to a person; it does not link ids.
+- **`alias`** links the anonymous browsing above to the new account's `team`.
+- **`identify`** attaches attributes to the team; it does not link ids.
 
 Both run server-side only: they change identity state, so they are never reachable
 from a browser. From here the team exists and rides on every later event.
@@ -194,8 +176,8 @@ hands the browser nothing.
 | Call                                 | Side             | Does                                          |
 | ------------------------------------ | ---------------- | --------------------------------------------- |
 | `capture(event, app, properties, …)` | browser + server | record an event                               |
-| `identify(user, properties)`         | server only      | set/merge attributes on a person              |
-| `alias(previous_id, user)`           | server only      | record that an anonymous id is a known person |
+| `identify(team, properties)`         | server only      | set/merge attributes on a team (the account)  |
+| `alias(previous_id, team)`           | server only      | record that an anonymous id belongs to a team |
 | `boot_config()`                      | server (guest)   | hand the browser its client config            |
 
 `alias` only ever merges an **anonymous** id into a known one; it refuses to collapse

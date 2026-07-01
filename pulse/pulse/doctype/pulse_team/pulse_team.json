@@ -1,20 +1,20 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:user",
+ "autoname": "field:team",
  "creation": "2025-08-24 15:11:22.905364",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "user",
+  "team",
   "properties"
  ],
  "fields": [
   {
-   "fieldname": "user",
+   "fieldname": "team",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "User",
+   "label": "Team",
    "reqd": 1,
    "unique": 1
   },
@@ -29,7 +29,7 @@
  "modified": "2025-08-24 15:11:22.905364",
  "modified_by": "Administrator",
  "module": "Pulse",
- "name": "Pulse Person",
+ "name": "Pulse Team",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
@@ -49,5 +49,5 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "user"
+ "title_field": "team"
 }
