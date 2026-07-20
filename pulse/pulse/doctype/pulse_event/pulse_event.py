@@ -5,12 +5,13 @@ import time
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import convert_utc_to_system_timezone, get_datetime, now_datetime
+from frappe.utils import now_datetime
 from frappe.utils.synchronization import LockTimeoutError, filelock
 
 from pulse.logger import get_logger
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
 from pulse.utils import log_error
+from pulse.validation import resolve_captured_at, serialize_properties, validate_event_name
 
 logger = get_logger()
 
@@ -86,34 +87,34 @@ class PulseEvent(Document):
 def enqueue_event(event_name, captured_at, site=None, app=None, user=None, team=None, properties=None):
 	"""Validate and push a single event onto the Redis staging stream.
 
+	This is the single funnel every event passes through, whichever endpoint it
+	arrived at, so it is where the shape checks in `pulse.validation` are applied.
+
 	Events are never written to the database synchronously on the ingest path —
 	they are buffered in Redis and flushed in batches by `consume_pulse_events`.
 	This keeps ingest cheap and absorbs bursts without overrunning the database.
 	"""
 	missing = [
-		field
-		for field, value in (("event_name", event_name), ("captured_at", captured_at))
-		if not value
+		field for field, value in (("event_name", event_name), ("captured_at", captured_at)) if not value
 	]
 	if missing:
 		frappe.throw(f"Missing required fields: {', '.join(missing)}")
 
-	captured_at = get_datetime(captured_at)
-	if captured_at.tzinfo and captured_at.tzinfo.utc:
-		captured_at = convert_utc_to_system_timezone(captured_at)
+	validate_event_name(event_name)
+	received_at = now_datetime()
 
 	_get_event_stream().add(
 		{
 			"event_name": event_name,
-			"captured_at": captured_at,
+			"captured_at": resolve_captured_at(captured_at, received_at),
 			"site": site,
 			"user": user,
 			"team": team,
 			"app": app,
 			# Serialize to JSON here so the value lands in the JSON column as
 			# valid JSON (the stream stringifies every field with cstr).
-			"properties": frappe.as_json(properties or {}),
-			"received_at": now_datetime(),
+			"properties": serialize_properties(properties),
+			"received_at": received_at,
 		}
 	)
 
