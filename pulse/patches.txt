@@ -7,3 +7,4 @@ pulse.patches.rename_pulse_person_to_team
 # Patches added in this section will be executed after doctypes are migrated
 pulse.patches.migrate_warehouse_to_db
 pulse.patches.restore_event_creation_timestamps
+pulse.patches.drop_received_at_column
