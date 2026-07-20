@@ -12,6 +12,7 @@
   "user",
   "team",
   "column_break_swwj",
+  "event_id",
   "properties"
  ],
  "fields": [
@@ -21,6 +22,14 @@
    "in_list_view": 1,
    "label": "Event Name",
    "search_index": 1
+  },
+  {
+   "description": "Client-generated id, unique per captured event. Null for callers that don't send one. The unique index is what makes a resent event a no-op instead of a duplicate row.",
+   "fieldname": "event_id",
+   "fieldtype": "Data",
+   "label": "Event ID",
+   "read_only": 1,
+   "unique": 1
   },
   {
    "fieldname": "column_break_swwj",

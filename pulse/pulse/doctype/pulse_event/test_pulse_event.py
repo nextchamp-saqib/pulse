@@ -100,3 +100,25 @@ class IntegrationTestPulseEvent(IntegrationTestCase):
 	def test_consume_no_events_is_noop(self):
 		consume_pulse_events()
 		self.assertEqual(self._count(), 0)
+
+	def test_consume_keeps_one_row_per_client_event_id(self):
+		# A client that resends a batch — after a timeout, or because it double-fired —
+		# sends the same event_id again. Each copy is a separate stream entry, so the
+		# entry-id primary key can't catch it; the unique event_id is what does.
+		event_id = uuid.uuid4().hex
+		self._enqueue("resent", site="s", event_id=event_id)
+		self._enqueue("resent", site="s", event_id=event_id)
+
+		consume_pulse_events()
+
+		self.assertEqual(self._count(), 1)
+
+	def test_consume_keeps_every_event_without_an_id(self):
+		# Callers that send no event_id opt out of deduplication rather than
+		# collapsing onto a shared empty key.
+		self._enqueue("unkeyed", site="s")
+		self._enqueue("unkeyed", site="s")
+
+		consume_pulse_events()
+
+		self.assertEqual(self._count(), 2)

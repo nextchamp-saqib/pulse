@@ -11,7 +11,12 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import get_system_timezone, now_datetime
 
 from pulse.constants import MAX_PROPERTIES_LENGTH, MAX_PROPERTY_VALUE_LENGTH
-from pulse.validation import resolve_captured_at, serialize_properties, validate_event_name
+from pulse.validation import (
+	resolve_captured_at,
+	serialize_properties,
+	validate_event_id,
+	validate_event_name,
+)
 
 
 class IntegrationTestEventName(IntegrationTestCase):
@@ -38,6 +43,20 @@ class IntegrationTestEventName(IntegrationTestCase):
 		for name in names:
 			with self.assertRaises(frappe.ValidationError, msg=name):
 				validate_event_name(name)
+
+
+class IntegrationTestEventId(IntegrationTestCase):
+	def test_absent_id_means_no_deduplication(self):
+		for value in (None, ""):
+			self.assertIsNone(validate_event_id(value))
+
+	def test_accepts_a_generated_id(self):
+		self.assertEqual(validate_event_id("a" * 32), "a" * 32)
+
+	def test_rejects_an_id_that_could_not_have_been_generated(self):
+		for value in ("short", "a" * 65, "has spaces!!", "'; DROP TABLE--"):
+			with self.assertRaises(frappe.ValidationError, msg=value):
+				validate_event_id(value)
 
 
 class IntegrationTestCapturedAt(IntegrationTestCase):

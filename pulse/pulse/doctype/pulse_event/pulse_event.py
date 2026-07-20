@@ -11,7 +11,12 @@ from frappe.utils.synchronization import LockTimeoutError, filelock
 from pulse.logger import get_logger
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
 from pulse.utils import log_error
-from pulse.validation import resolve_captured_at, serialize_properties, validate_event_name
+from pulse.validation import (
+	resolve_captured_at,
+	serialize_properties,
+	validate_event_id,
+	validate_event_name,
+)
 
 logger = get_logger()
 
@@ -37,10 +42,12 @@ REQD_FIELDS = ["event_name", "captured_at"]
 
 # Columns written by the consumer for each event row. `name` is the Redis stream
 # entry id, which makes the insert idempotent: a redelivered entry collides on the
-# primary key and is skipped (see `consume_pulse_events`). The receive time is not
+# primary key and is skipped (see `consume_pulse_events`). `event_id` extends that
+# same protection one hop further out, to the client. The receive time is not
 # stored as its own column — it is the row's `creation`.
 _INSERT_FIELDS = [
 	"name",
+	"event_id",
 	"event_name",
 	"captured_at",
 	"site",
@@ -84,7 +91,16 @@ class PulseEvent(Document):
 			frappe.throw(f"Missing required fields: {', '.join(missing)}")
 
 
-def enqueue_event(event_name, captured_at, site=None, app=None, user=None, team=None, properties=None):
+def enqueue_event(
+	event_name,
+	captured_at,
+	site=None,
+	app=None,
+	user=None,
+	team=None,
+	properties=None,
+	event_id=None,
+):
 	"""Validate and push a single event onto the Redis staging stream.
 
 	This is the single funnel every event passes through, whichever endpoint it
@@ -105,6 +121,7 @@ def enqueue_event(event_name, captured_at, site=None, app=None, user=None, team=
 
 	_get_event_stream().add(
 		{
+			"event_id": validate_event_id(event_id),
 			"event_name": event_name,
 			"captured_at": resolve_captured_at(captured_at, received_at),
 			"site": site,
@@ -126,6 +143,9 @@ def _row_from_entry(entry, fallback_ts):
 	audit_ts = data.get("received_at") or fallback_ts
 	return (
 		entry.get("id"),  # name == stream entry id (idempotency key)
+		# Absent when the caller sends none. It has to stay NULL rather than become
+		# "": the unique index tolerates any number of NULLs but only one "".
+		data.get("event_id") or None,
 		data.get("event_name"),
 		data.get("captured_at"),
 		data.get("site"),

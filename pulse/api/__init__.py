@@ -17,7 +17,16 @@ def get_rate_limit():
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(key="site", limit=get_rate_limit, seconds=60)
-def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, properties=None):
+def ingest(
+	event_name,
+	captured_at,
+	site=None,
+	app=None,
+	user=None,
+	team=None,
+	properties=None,
+	event_id=None,
+):
 	check_auth()
 
 	try:
@@ -29,6 +38,7 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, p
 			user=user,
 			team=team,
 			properties=properties,
+			event_id=event_id,
 		)
 	except Exception as e:
 		logger.error(
@@ -85,6 +95,7 @@ def _bulk_ingest(events, browser_direct):
 				user=event.user,
 				team=event.team,
 				properties=event.properties,
+				event_id=event.event_id,
 			)
 			accepted += 1
 		except frappe.ValidationError as e:
