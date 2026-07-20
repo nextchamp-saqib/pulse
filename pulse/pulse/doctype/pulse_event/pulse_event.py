@@ -10,6 +10,7 @@ from frappe.utils.synchronization import LockTimeoutError, filelock
 
 from pulse.capture import DROP, MARK_INTERNAL, evaluate
 from pulse.logger import get_logger
+from pulse.pulse.doctype.pulse_event_catalog.pulse_event_catalog import record_events
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
 from pulse.utils import log_error
 from pulse.validation import (
@@ -209,6 +210,10 @@ def _consume_locked():
 		# the entries stay pending and get redelivered, but the idempotent insert
 		# makes the redelivery harmless.
 		stream.ack_entries([entry["id"] for entry in entries])
+
+		# Bookkeeping, deliberately last: it must not stand between an event and
+		# being stored, and it is allowed to fail on its own.
+		record_events([entry.get("data", {}) for entry in entries])
 
 		if len(entries) < CONSUME_BATCH_SIZE:
 			break
