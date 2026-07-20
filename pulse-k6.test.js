@@ -77,7 +77,7 @@ function makeEvent() {
 	const lastActive = new Date(Date.now() - (hoursAgo * 60 + minutesAgo) * 60 * 1000);
 
 	return {
-		event_name: "app.active",
+		event_name: "app_active",
 		site: siteId,
 		app: app,
 		captured_at: new Date().toISOString(),
