@@ -83,11 +83,12 @@ def _bulk_ingest(events, browser_direct):
 	check_auth()
 	_resolve_anonymous_users(events, browser_direct)
 	accepted = 0
+	dropped = 0
 	rejected = []
 	for index, event in enumerate(events):
 		event = frappe._dict(event)
 		try:
-			enqueue_event(
+			staged = enqueue_event(
 				event_name=event.event_name,
 				captured_at=event.captured_at,
 				site=event.site,
@@ -97,7 +98,10 @@ def _bulk_ingest(events, browser_direct):
 				properties=event.properties,
 				event_id=event.event_id,
 			)
-			accepted += 1
+			if staged:
+				accepted += 1
+			else:
+				dropped += 1
 		except frappe.ValidationError as e:
 			rejected.append({"index": index, "event_name": event.event_name, "error": str(e)})
 
@@ -111,7 +115,7 @@ def _bulk_ingest(events, browser_direct):
 			}
 		)
 
-	return {"accepted": accepted, "rejected": rejected}
+	return {"accepted": accepted, "dropped": dropped, "rejected": rejected}
 
 
 def _resolve_anonymous_users(events, browser_direct):

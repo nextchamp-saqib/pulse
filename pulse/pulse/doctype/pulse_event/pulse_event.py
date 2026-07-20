@@ -5,9 +5,10 @@ import time
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import now_datetime
+from frappe.utils import cint, now_datetime
 from frappe.utils.synchronization import LockTimeoutError, filelock
 
+from pulse.capture import DROP, MARK_INTERNAL, evaluate
 from pulse.logger import get_logger
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
 from pulse.utils import log_error
@@ -54,6 +55,7 @@ _INSERT_FIELDS = [
 	"app",
 	"user",
 	"team",
+	"is_internal",
 	"properties",
 	"creation",
 	"modified",
@@ -109,6 +111,9 @@ def enqueue_event(
 	Events are never written to the database synchronously on the ingest path —
 	they are buffered in Redis and flushed in batches by `consume_pulse_events`.
 	This keeps ingest cheap and absorbs bursts without overrunning the database.
+
+	Returns whether the event was staged; a capture rule may drop it (see
+	`pulse.capture`), which is not a failure and is not reported as one.
 	"""
 	missing = [
 		field for field, value in (("event_name", event_name), ("captured_at", captured_at)) if not value
@@ -117,8 +122,12 @@ def enqueue_event(
 		frappe.throw(f"Missing required fields: {', '.join(missing)}")
 
 	validate_event_name(event_name)
-	received_at = now_datetime()
 
+	action = evaluate(event_name=event_name, site=site, app=app, user=user)
+	if action == DROP:
+		return False
+
+	received_at = now_datetime()
 	_get_event_stream().add(
 		{
 			"event_id": validate_event_id(event_id),
@@ -128,12 +137,14 @@ def enqueue_event(
 			"user": user,
 			"team": team,
 			"app": app,
+			"is_internal": 1 if action == MARK_INTERNAL else 0,
 			# Serialize to JSON here so the value lands in the JSON column as
 			# valid JSON (the stream stringifies every field with cstr).
 			"properties": serialize_properties(properties),
 			"received_at": received_at,
 		}
 	)
+	return True
 
 
 def _row_from_entry(entry, fallback_ts):
@@ -152,6 +163,7 @@ def _row_from_entry(entry, fallback_ts):
 		data.get("app"),
 		data.get("user"),
 		data.get("team"),
+		cint(data.get("is_internal")),
 		data.get("properties") or "{}",
 		audit_ts,  # creation
 		audit_ts,  # modified

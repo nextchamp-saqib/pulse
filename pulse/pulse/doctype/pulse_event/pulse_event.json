@@ -13,6 +13,7 @@
   "team",
   "column_break_swwj",
   "event_id",
+  "is_internal",
   "properties"
  ],
  "fields": [
@@ -40,6 +41,15 @@
    "fieldtype": "Datetime",
    "label": "Captured At",
    "search_index": 1
+  },
+  {
+   "default": "0",
+   "description": "Set by a Pulse Capture Rule. The event is kept but is not real product usage — test, staging or load-test traffic — so reporting should exclude it.",
+   "fieldname": "is_internal",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Internal",
+   "read_only": 1
   },
   {
    "fieldname": "properties",

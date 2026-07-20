@@ -1,0 +1,100 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-07-20 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "match_field",
+  "match_operator",
+  "match_value",
+  "column_break_rule",
+  "action",
+  "disabled",
+  "reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "match_field",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Match Field",
+   "options": "Site\nApp\nEvent Name\nUser",
+   "reqd": 1
+  },
+  {
+   "default": "Equals",
+   "fieldname": "match_operator",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Match Operator",
+   "options": "Equals\nMatches",
+   "reqd": 1
+  },
+  {
+   "description": "Compared against the event's value for the chosen field. With the Matches operator, '*' stands for any run of characters (e.g. '*.staging.frappe.cloud', '*test*').",
+   "fieldname": "match_value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Match Value",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_rule",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Drop",
+   "description": "Drop discards the event at ingest and it is never stored. Mark Internal stores it with the Internal flag set, so it can be kept for debugging while being excluded from reporting.",
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Action",
+   "options": "Drop\nMark Internal",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "disabled",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Disabled"
+  },
+  {
+   "description": "Why this rule exists, for whoever finds events missing later.",
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-20 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Pulse",
+ "name": "Pulse Capture Rule",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "match_value"
+}
