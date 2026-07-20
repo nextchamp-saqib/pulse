@@ -47,6 +47,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "How often this name has been seen, counted as events are consumed. Approximate: a resent event is counted per delivery, while only one row is stored. Use it to judge whether a name is in real use, not as a total.",
    "fieldname": "event_count",
    "fieldtype": "Int",
    "in_list_view": 1,

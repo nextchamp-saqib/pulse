@@ -57,6 +57,10 @@ def record_events(events: list[dict]):
 	Called after the batch is durably stored, and never allowed to fail the drain:
 	the catalog is bookkeeping, and losing a note about a name is not worth losing
 	the events it describes.
+
+	Counts what was consumed, which is a hair above what was stored — deduplication
+	happens in the insert, so a resent event is counted per delivery. The number is
+	here to show whether a name is in real use, not to be reconciled against rows.
 	"""
 	try:
 		_record_events(_summarize(events))
