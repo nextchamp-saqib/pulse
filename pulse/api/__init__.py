@@ -1,6 +1,7 @@
 import frappe
 from frappe.rate_limiter import rate_limit
 
+from pulse import metrics
 from pulse.anon import derive_anon_user
 from pulse.logger import get_logger
 from pulse.pulse.doctype.pulse_event.pulse_event import enqueue_event
@@ -21,7 +22,7 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, p
 	check_auth()
 
 	try:
-		enqueue_event(
+		staged = enqueue_event(
 			event_name=event_name,
 			captured_at=captured_at,
 			site=site,
@@ -31,6 +32,10 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, p
 			properties=properties,
 		)
 	except Exception as e:
+		# A rejection is the event's own fault and is counted as such; anything else
+		# is the service failing and is left out of the ingest tally.
+		if isinstance(e, frappe.ValidationError):
+			metrics.record(rejected=1)
 		logger.error(
 			{
 				"request_ip": frappe.local.request_ip,
@@ -39,6 +44,8 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, p
 			}
 		)
 		raise e
+
+	metrics.record(accepted=1 if staged else 0, dropped=0 if staged else 1)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -93,6 +100,8 @@ def _bulk_ingest(events, browser_direct):
 				dropped += 1
 		except frappe.ValidationError as e:
 			rejected.append({"index": index, "event_name": event.event_name, "error": str(e)})
+
+	metrics.record(accepted=accepted, dropped=dropped, rejected=len(rejected))
 
 	if rejected:
 		logger.error(
