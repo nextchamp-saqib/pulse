@@ -10,16 +10,17 @@ app_license = "AGPLv3"
 
 # required_apps = []
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "pulse",
-# 		"logo": "/assets/pulse/logo.png",
-# 		"title": "Pulse",
-# 		"route": "/pulse",
-# 		"has_permission": "pulse.api.permission.has_app_permission"
-# 	}
-# ]
+# Shown on the apps screen. Pulse has no frontend of its own — the route is its
+# Desk workspace, which is where every doctype it owns is reached from.
+add_to_apps_screen = [
+	{
+		"name": "pulse",
+		"logo": "/assets/pulse/images/logo.svg",
+		"title": "Pulse",
+		"route": "/desk/pulse",
+		"has_permission": "pulse.api.has_app_permission",
+	}
+]
 
 # Includes in <head>
 # ------------------

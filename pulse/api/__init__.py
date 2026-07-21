@@ -9,6 +9,16 @@ from pulse.pulse.doctype.pulse_event.pulse_event import enqueue_event
 logger = get_logger()
 
 
+def has_app_permission():
+	"""Whether to offer Pulse on the apps screen (see `add_to_apps_screen`).
+
+	Everything Pulse owns is System Manager-only, so a user who cannot read an event
+	would arrive at a workspace of empty lists. Keyed on that permission rather than
+	on the role, so a site that grants access differently is respected.
+	"""
+	return bool(frappe.has_permission("Pulse Event", "read"))
+
+
 def get_rate_limit():
 	# Max ingest requests allowed per minute, per site (see `key="site"` below).
 	# Keyed on site rather than IP: many Frappe Cloud sites share one outbound IP,
