@@ -12,7 +12,7 @@
   "user",
   "team",
   "column_break_swwj",
-  "event_id",
+  "dedup_key",
   "is_internal",
   "properties"
  ],
@@ -24,10 +24,10 @@
    "label": "Event Name"
   },
   {
-   "description": "Client-generated id, unique per captured event. Null for callers that don't send one. The unique index is what makes a resent event a no-op instead of a duplicate row.",
-   "fieldname": "event_id",
+   "description": "Fingerprint of the event, derived at ingest from its name, timestamp, source and properties. The unique index on it is what makes an event sent twice a no-op instead of a duplicate row.",
+   "fieldname": "dedup_key",
    "fieldtype": "Data",
-   "label": "Event ID",
+   "label": "Dedup Key",
    "read_only": 1,
    "unique": 1
   },

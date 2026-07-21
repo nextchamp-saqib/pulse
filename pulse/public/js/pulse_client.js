@@ -115,10 +115,6 @@ export class PulseClient {
 
 		const { user, team } = this.getContext() || {};
 		this.eq.add({
-			// Minted once, at capture, and carried through every retry of this event —
-			// which is what lets the host recognise a resend as the same event. A
-			// batch that times out and is sent again therefore costs nothing.
-			event_id: uuid(),
 			event_name: event_name,
 			app: app,
 			properties: props,

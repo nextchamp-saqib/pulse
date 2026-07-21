@@ -25,7 +25,6 @@ import frappe
 from frappe.utils import convert_utc_to_system_timezone, get_datetime
 
 from pulse.constants import (
-	EVENT_ID_PATTERN,
 	EVENT_NAME_PATTERN,
 	MAX_CLOCK_SKEW_MINUTES,
 	MAX_EVENT_AGE_DAYS,
@@ -36,7 +35,6 @@ from pulse.constants import (
 )
 
 _event_name_re = re.compile(EVENT_NAME_PATTERN)
-_event_id_re = re.compile(EVENT_ID_PATTERN)
 
 MAX_CLOCK_SKEW = datetime.timedelta(minutes=MAX_CLOCK_SKEW_MINUTES)
 MAX_EVENT_AGE = datetime.timedelta(days=MAX_EVENT_AGE_DAYS)
@@ -56,23 +54,6 @@ def validate_event_name(event_name: str):
 			"optionally namespaced (e.g. 'ticket_created' or 'helpdesk:ticket_created')",
 			frappe.ValidationError,
 		)
-
-
-def validate_event_id(event_id) -> str | None:
-	"""Check the client's idempotency key, or return None when it sent none.
-
-	The key backs a unique index, so a malformed one is worth turning away: it would
-	either be rejected by the column or, worse, collide with another caller's. An
-	absent key is fine — it only means that caller opts out of deduplication.
-	"""
-	if not event_id:
-		return None
-	if not _event_id_re.match(str(event_id)):
-		frappe.throw(
-			f"Invalid event_id {str(event_id)[:64]!r}: expected 8-64 characters of [A-Za-z0-9_-]",
-			frappe.ValidationError,
-		)
-	return event_id
 
 
 def resolve_captured_at(captured_at, received_at: datetime.datetime) -> datetime.datetime:
