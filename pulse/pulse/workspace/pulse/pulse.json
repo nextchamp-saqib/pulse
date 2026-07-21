@@ -1,7 +1,7 @@
 {
  "app": "pulse",
  "charts": [],
- "content": "[]",
+ "content": "[{\"id\": \"pulseShort1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Event Catalog\", \"col\": 4}}, {\"id\": \"pulseShort2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Capture Rules\", \"col\": 4}}, {\"id\": \"pulseShort3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Pulse Team\", \"col\": 4}}, {\"id\": \"pulseSpacer\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"pulseCard01\", \"type\": \"card\", \"data\": {\"card_name\": \"Events\", \"col\": 4}}, {\"id\": \"pulseCard02\", \"type\": \"card\", \"data\": {\"card_name\": \"Identity\", \"col\": 4}}, {\"id\": \"pulseCard03\", \"type\": \"card\", \"data\": {\"card_name\": \"Health\", \"col\": 4}}, {\"id\": \"pulseCard04\", \"type\": \"card\", \"data\": {\"card_name\": \"Configuration\", \"col\": 4}}]",
  "creation": "2026-07-20 12:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -14,8 +14,139 @@
  "is_hidden": 0,
  "label": "Pulse",
  "link_type": "DocType",
- "links": [],
- "modified": "2026-07-20 12:00:00.000000",
+ "links": [
+  {
+   "description": "What was captured, and the names in use",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Events",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pulse Event",
+   "link_count": 0,
+   "link_to": "Pulse Event",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pulse Event Catalog",
+   "link_count": 0,
+   "link_to": "Pulse Event Catalog",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Who the events belong to",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Identity",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pulse Team",
+   "link_count": 0,
+   "link_to": "Pulse Team",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pulse Alias",
+   "link_count": 0,
+   "link_to": "Pulse Alias",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "Whether ingest is keeping up, and what it turned away",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Health",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pulse Ingest Stat",
+   "link_count": 0,
+   "link_to": "Pulse Ingest Stat",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Redis Stream",
+   "link_count": 0,
+   "link_to": "Redis Stream",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pulse Log",
+   "link_count": 0,
+   "link_to": "Pulse Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "description": "What to change when something is wrong",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Configuration",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pulse Capture Rule",
+   "link_count": 0,
+   "link_to": "Pulse Capture Rule",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pulse Settings",
+   "link_count": 0,
+   "link_to": "Pulse Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-07-21 13:45:00.000000",
  "modified_by": "Administrator",
  "module": "Pulse",
  "name": "Pulse",
@@ -25,7 +156,32 @@
  "quick_lists": [],
  "roles": [],
  "sequence_id": 60.0,
- "shortcuts": [],
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Event Catalog",
+   "link_to": "Pulse Event Catalog",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Capture Rules",
+   "link_to": "Pulse Capture Rule",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Pulse Team",
+   "link_to": "Pulse Team",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
  "sidebar_items": [
   {
    "child": 0,

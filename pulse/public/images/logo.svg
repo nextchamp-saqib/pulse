@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Pulse">
-  <rect width="64" height="64" rx="14" fill="#16A34A"/>
+  <rect width="64" height="64" rx="14" fill="#74C365"/>
   <path d="M9 32h11l5.5-12L32 44l6-16 4 4h12"
         fill="none" stroke="#FFFFFF" stroke-width="4.5"
         stroke-linecap="round" stroke-linejoin="round"/>
