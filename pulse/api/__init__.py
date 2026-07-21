@@ -1,11 +1,22 @@
 import frappe
 from frappe.rate_limiter import rate_limit
 
+from pulse import metrics
 from pulse.anon import derive_anon_user
 from pulse.logger import get_logger
 from pulse.pulse.doctype.pulse_event.pulse_event import enqueue_event
 
 logger = get_logger()
+
+
+def has_app_permission():
+	"""Whether to offer Pulse on the apps screen (see `add_to_apps_screen`).
+
+	Everything Pulse owns is System Manager-only, so a user who cannot read an event
+	would arrive at a workspace of empty lists. Keyed on that permission rather than
+	on the role, so a site that grants access differently is respected.
+	"""
+	return bool(frappe.has_permission("Pulse Event", "read"))
 
 
 def get_rate_limit():
@@ -21,7 +32,7 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, p
 	check_auth()
 
 	try:
-		enqueue_event(
+		staged = enqueue_event(
 			event_name=event_name,
 			captured_at=captured_at,
 			site=site,
@@ -31,6 +42,10 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, p
 			properties=properties,
 		)
 	except Exception as e:
+		# A rejection is the event's own fault and is counted as such; anything else
+		# is the service failing and is left out of the ingest tally.
+		if isinstance(e, frappe.ValidationError):
+			metrics.record(rejected=1)
 		logger.error(
 			{
 				"request_ip": frappe.local.request_ip,
@@ -39,6 +54,8 @@ def ingest(event_name, captured_at, site=None, app=None, user=None, team=None, p
 			}
 		)
 		raise e
+
+	metrics.record(accepted=1 if staged else 0, dropped=0 if staged else 1)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -57,18 +74,28 @@ def bulk_ingest(events, site=None):
 	# `site` sent by the client; until the client sends it, fall back to the batch
 	# (single-site, since the client's event queue is site-namespaced).
 	frappe.form_dict["site"] = site or (events[0].get("site") if events else None)
-	_bulk_ingest(events, browser_direct)
+	return _bulk_ingest(events, browser_direct)
 
 
 @rate_limit(key="site", limit=get_rate_limit, seconds=60)
 def _bulk_ingest(events, browser_direct):
+	"""Enqueue a batch, reporting per-event rejections instead of failing the batch.
+
+	A rejected event is the client's to fix, not to retry: failing the whole request
+	made the client resend the batch, re-enqueuing the events that had already been
+	accepted. So a bad event is reported in the response and the batch still succeeds.
+	Infrastructure failures (Redis down) are *not* caught — they propagate, the request
+	fails, and the client's retry is then the correct response.
+	"""
 	check_auth()
 	_resolve_anonymous_users(events, browser_direct)
-	failed = []
-	for event in events:
+	accepted = 0
+	dropped = 0
+	rejected = []
+	for index, event in enumerate(events):
+		event = frappe._dict(event)
 		try:
-			event = frappe._dict(event)
-			enqueue_event(
+			staged = enqueue_event(
 				event_name=event.event_name,
 				captured_at=event.captured_at,
 				site=event.site,
@@ -77,28 +104,26 @@ def _bulk_ingest(events, browser_direct):
 				team=event.team,
 				properties=event.properties,
 			)
-		except Exception as e:
-			failed.append(
-				{
-					"event": {
-						"event_name": event.event_name,
-						"site": event.site,
-						"app": event.app,
-						"user": event.user,
-					},
-					"error": str(e),
-				}
-			)
+			if staged:
+				accepted += 1
+			else:
+				dropped += 1
+		except frappe.ValidationError as e:
+			rejected.append({"index": index, "event_name": event.event_name, "error": str(e)})
 
-	if failed:
+	metrics.record(accepted=accepted, dropped=dropped, rejected=len(rejected))
+
+	if rejected:
 		logger.error(
 			{
 				"request_ip": frappe.local.request_ip,
-				"events": failed,
-				"error": "Failed to insert some events",
+				"site": frappe.form_dict.get("site"),
+				"rejected": rejected,
+				"error": "Rejected some events",
 			}
 		)
-		frappe.throw("Failed to insert some events", frappe.ValidationError)
+
+	return {"accepted": accepted, "dropped": dropped, "rejected": rejected}
 
 
 def _resolve_anonymous_users(events, browser_direct):
@@ -223,9 +248,7 @@ def upsert_alias(previous_id, team):
 	# `previous_id` must be anonymous: if it's itself an identity (has a profile, or
 	# is the target of another alias), merging it under `team` would collapse two
 	# identified subjects.
-	if frappe.db.exists("Pulse Team", previous_id) or frappe.db.exists(
-		"Pulse Alias", {"team": previous_id}
-	):
+	if frappe.db.exists("Pulse Team", previous_id) or frappe.db.exists("Pulse Alias", {"team": previous_id}):
 		_refuse_merge(previous_id, team, reason="previous_id is already an identified team")
 		return
 

@@ -5,12 +5,16 @@ import time
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import convert_utc_to_system_timezone, get_datetime, now_datetime
+from frappe.utils import cint, now_datetime
 from frappe.utils.synchronization import LockTimeoutError, filelock
 
+from pulse.capture import DROP, MARK_INTERNAL, evaluate
+from pulse.dedup import dedup_key
 from pulse.logger import get_logger
+from pulse.pulse.doctype.pulse_event_catalog.pulse_event_catalog import record_events
 from pulse.pulse.doctype.redis_stream.redis_stream import RedisStream
 from pulse.utils import log_error
+from pulse.validation import resolve_captured_at, serialize_properties, validate_event_name
 
 logger = get_logger()
 
@@ -36,16 +40,19 @@ REQD_FIELDS = ["event_name", "captured_at"]
 
 # Columns written by the consumer for each event row. `name` is the Redis stream
 # entry id, which makes the insert idempotent: a redelivered entry collides on the
-# primary key and is skipped (see `consume_pulse_events`). The receive time is not
+# primary key and is skipped (see `consume_pulse_events`). `dedup_key` extends that
+# same protection out past the host, to an event sent twice. The receive time is not
 # stored as its own column — it is the row's `creation`.
 _INSERT_FIELDS = [
 	"name",
+	"dedup_key",
 	"event_name",
 	"captured_at",
 	"site",
 	"app",
 	"user",
 	"team",
+	"is_internal",
 	"properties",
 	"creation",
 	"modified",
@@ -86,36 +93,49 @@ class PulseEvent(Document):
 def enqueue_event(event_name, captured_at, site=None, app=None, user=None, team=None, properties=None):
 	"""Validate and push a single event onto the Redis staging stream.
 
+	This is the single funnel every event passes through, whichever endpoint it
+	arrived at, so it is where the shape checks in `pulse.validation` are applied.
+
 	Events are never written to the database synchronously on the ingest path —
 	they are buffered in Redis and flushed in batches by `consume_pulse_events`.
 	This keeps ingest cheap and absorbs bursts without overrunning the database.
+
+	Returns whether the event was staged; a capture rule may drop it (see
+	`pulse.capture`), which is not a failure and is not reported as one.
 	"""
 	missing = [
-		field
-		for field, value in (("event_name", event_name), ("captured_at", captured_at))
-		if not value
+		field for field, value in (("event_name", event_name), ("captured_at", captured_at)) if not value
 	]
 	if missing:
 		frappe.throw(f"Missing required fields: {', '.join(missing)}")
 
-	captured_at = get_datetime(captured_at)
-	if captured_at.tzinfo and captured_at.tzinfo.utc:
-		captured_at = convert_utc_to_system_timezone(captured_at)
+	validate_event_name(event_name)
+
+	action = evaluate(event_name=event_name, site=site, app=app, user=user)
+	if action == DROP:
+		return False
+
+	received_at = now_datetime()
+	captured_at = resolve_captured_at(captured_at, received_at)
+	# Serialize to JSON here so the value lands in the JSON column as valid JSON
+	# (the stream stringifies every field with cstr).
+	properties = serialize_properties(properties)
 
 	_get_event_stream().add(
 		{
+			"dedup_key": dedup_key(event_name, captured_at, site, app, user, team, properties),
 			"event_name": event_name,
 			"captured_at": captured_at,
 			"site": site,
 			"user": user,
 			"team": team,
 			"app": app,
-			# Serialize to JSON here so the value lands in the JSON column as
-			# valid JSON (the stream stringifies every field with cstr).
-			"properties": frappe.as_json(properties or {}),
-			"received_at": now_datetime(),
+			"is_internal": 1 if action == MARK_INTERNAL else 0,
+			"properties": properties,
+			"received_at": received_at,
 		}
 	)
+	return True
 
 
 def _row_from_entry(entry, fallback_ts):
@@ -125,12 +145,16 @@ def _row_from_entry(entry, fallback_ts):
 	audit_ts = data.get("received_at") or fallback_ts
 	return (
 		entry.get("id"),  # name == stream entry id (idempotency key)
+		# NULL rather than "" for an entry staged before this column existed: the
+		# unique index tolerates any number of NULLs but only one "".
+		data.get("dedup_key") or None,
 		data.get("event_name"),
 		data.get("captured_at"),
 		data.get("site"),
 		data.get("app"),
 		data.get("user"),
 		data.get("team"),
+		cint(data.get("is_internal")),
 		data.get("properties") or "{}",
 		audit_ts,  # creation
 		audit_ts,  # modified
@@ -176,6 +200,10 @@ def _consume_locked():
 		# the entries stay pending and get redelivered, but the idempotent insert
 		# makes the redelivery harmless.
 		stream.ack_entries([entry["id"] for entry in entries])
+
+		# Bookkeeping, deliberately last: it must not stand between an event and
+		# being stored, and it is allowed to fail on its own.
+		record_events([entry.get("data", {}) for entry in entries])
 
 		if len(entries) < CONSUME_BATCH_SIZE:
 			break

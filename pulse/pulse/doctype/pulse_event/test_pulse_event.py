@@ -100,3 +100,26 @@ class IntegrationTestPulseEvent(IntegrationTestCase):
 	def test_consume_no_events_is_noop(self):
 		consume_pulse_events()
 		self.assertEqual(self._count(), 0)
+
+	def test_consume_keeps_one_row_for_a_resent_event(self):
+		# A batch resent after a timeout, or instrumentation firing twice, arrives as
+		# two identical events. Each is a separate stream entry, so the entry-id
+		# primary key can't catch it; the derived dedup key is what does.
+		captured_at = frappe.utils.now_datetime()
+		for _ in range(2):
+			self._enqueue("resent", captured_at=captured_at, site="s", properties={"route": "/app"})
+
+		consume_pulse_events()
+
+		self.assertEqual(self._count(), 1)
+
+	def test_consume_keeps_events_that_only_look_alike(self):
+		# Same name and source, but a different moment or different properties — these
+		# are distinct events and all of them have to survive.
+		self._enqueue("similar", site="s", properties={"route": "/app"})
+		self._enqueue("similar", site="s", properties={"route": "/app/todo"})
+		self._enqueue("similar", site="s", properties={"route": "/app"})
+
+		consume_pulse_events()
+
+		self.assertEqual(self._count(), 3)

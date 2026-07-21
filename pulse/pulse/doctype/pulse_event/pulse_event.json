@@ -12,6 +12,8 @@
   "user",
   "team",
   "column_break_swwj",
+  "dedup_key",
+  "is_internal",
   "properties"
  ],
  "fields": [
@@ -19,8 +21,15 @@
    "fieldname": "event_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Event Name",
-   "search_index": 1
+   "label": "Event Name"
+  },
+  {
+   "description": "Fingerprint of the event, derived at ingest from its name, timestamp, source and properties. The unique index on it is what makes an event sent twice a no-op instead of a duplicate row.",
+   "fieldname": "dedup_key",
+   "fieldtype": "Data",
+   "label": "Dedup Key",
+   "read_only": 1,
+   "unique": 1
   },
   {
    "fieldname": "column_break_swwj",
@@ -33,6 +42,15 @@
    "search_index": 1
   },
   {
+   "default": "0",
+   "description": "Set by a Pulse Capture Rule. The event is kept but is not real product usage — test, staging or load-test traffic — so reporting should exclude it.",
+   "fieldname": "is_internal",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Internal",
+   "read_only": 1
+  },
+  {
    "fieldname": "properties",
    "fieldtype": "JSON",
    "label": "Properties"
@@ -40,8 +58,7 @@
   {
    "fieldname": "site",
    "fieldtype": "Data",
-   "label": "Site",
-   "search_index": 1
+   "label": "Site"
   },
   {
    "fieldname": "app",
@@ -51,8 +68,7 @@
   {
    "fieldname": "user",
    "fieldtype": "Data",
-   "label": "User",
-   "search_index": 1
+   "label": "User"
   },
   {
    "fieldname": "team",
